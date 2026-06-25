@@ -10,7 +10,7 @@ device and relays user input back to the selected desktop client.
 - GitHub Actions CI for typecheck, tests, and production builds.
 - Automated relay + mock desktop + simulated mobile e2e smoke test.
 - Shared protocol package with typed relay envelopes and client adapter models.
-- WebSocket relay server with an in-memory pairing flow, per-pair server
+- WebSocket relay server with memory and PostgreSQL stores, per-pair server
   sequence numbers, replay backlog, and reconnect cursors.
 - Desktop agent core with a complete mock adapter for end-to-end validation.
 - macOS accessibility adapter foundations for Cursor, Codex, and Claude clients:
@@ -136,8 +136,9 @@ EASYCODE_POSTGRES_TEST_URL=postgres://easycode:easycode@localhost:5432/easycode 
 - The relay server has an initial PostgreSQL store driver, but hosted
   deployment still needs database integration tests in CI and Redis-backed
   runtime coordination.
-- Reconnect recovery is implemented with an in-memory backlog. It is suitable
-  for local validation, but production still needs durable storage.
+- The memory store is suitable for local validation. PostgreSQL persists
+  envelope replay data, but production still needs Redis-backed runtime
+  coordination before multi-node relay deployment.
 - Real desktop-client extraction is heuristic. The macOS adapter reads the
   Accessibility tree and works best when the target client exposes chat text and
   buttons through native accessibility nodes. Cursor should be validated first.

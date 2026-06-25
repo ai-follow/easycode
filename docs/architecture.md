@@ -72,9 +72,9 @@ with its pair token; the relay closes existing sockets for that pair.
 Each accepted envelope receives a per-pair `serverSeq`. Reconnecting clients can
 pass `afterSeq` to `/v1/ws` to receive only missed backlog items. This is a
 transport cursor, not a business-level acknowledgment.
-The in-memory backlog is bounded by `EASYCODE_RELAY_BACKLOG_LIMIT`, and pairing
-codes expire according to `EASYCODE_PAIRING_TTL_MS`. The in-memory duplicate
-envelope id window is bounded separately by `EASYCODE_RELAY_DEDUPE_LIMIT`.
+The reconnect backlog is bounded by `EASYCODE_RELAY_BACKLOG_LIMIT`, and pairing
+codes expire according to `EASYCODE_PAIRING_TTL_MS`. The duplicate envelope id
+window is bounded separately by `EASYCODE_RELAY_DEDUPE_LIMIT`.
 The relay sends an `ack` payload back to the sending socket after it accepts an
 envelope. This only means the relay accepted the envelope for forwarding. It is
 not a desktop-client delivery receipt; adapter-level handling is still reported
@@ -107,9 +107,8 @@ may omit Origin and still authenticate with their pair token.
 
 ## Relay storage roadmap
 
-The relay store interface is asynchronous even though the current implementation
-is in-memory. This keeps HTTP handlers and WebSocket upgrade/message paths ready
-for PostgreSQL and Redis drivers without changing the relay protocol.
+The relay store interface is asynchronous so memory and PostgreSQL drivers share
+the same HTTP handlers, WebSocket upgrade path, and message flow.
 
 The initial PostgreSQL store owns durable pairing identity, hashed pair tokens,
 one-time pairing codes, sequence allocation, and persisted envelope metadata.
