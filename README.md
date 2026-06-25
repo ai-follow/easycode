@@ -134,8 +134,8 @@ EASYCODE_POSTGRES_TEST_URL=postgres://easycode:easycode@localhost:5432/easycode 
 ## Current limitations
 
 - The relay server has an initial PostgreSQL store driver, but hosted
-  deployment still needs database integration tests, migration automation, and
-  Redis-backed runtime coordination.
+  deployment still needs database integration tests in CI and Redis-backed
+  runtime coordination.
 - Reconnect recovery is implemented with an in-memory backlog. It is suitable
   for local validation, but production still needs durable storage.
 - Real desktop-client extraction is heuristic. The macOS adapter reads the

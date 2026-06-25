@@ -122,8 +122,8 @@ source of truth when Redis evicts data or restarts.
 
 ## Production backlog
 
-- Add database-backed integration tests, migration automation, and Redis runtime
-  coordination behind the async store contract.
+- Add database-backed integration tests to CI and Redis runtime coordination
+  behind the async store contract.
 - Add end-to-end encryption for envelope payloads after the pairing handshake.
 - Add Tauri shell that embeds the desktop agent core and permissions UI.
 - Harden Cursor conversation extraction with resilient selectors and fixtures
