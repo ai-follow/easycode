@@ -11,6 +11,7 @@ const startedAt = new Date();
 const store = new RelayStore();
 const server = createServer(createRequestHandler(store, {
   adminToken: process.env.EASYCODE_RELAY_ADMIN_TOKEN,
+  allowedOrigins: parseAllowedOrigins(process.env.EASYCODE_ALLOWED_ORIGINS),
   heartbeatIntervalMs,
   serviceVersion: process.env.npm_package_version,
   startedAt
@@ -137,6 +138,11 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseAllowedOrigins(value: string | undefined): string[] | undefined {
+  if (!value) return undefined;
+  return value.split(",").map((origin) => origin.trim()).filter(Boolean);
 }
 
 const serverError = (pairId: string, message: string, refId?: string): RelayEnvelope => ({

@@ -3,20 +3,22 @@ import type { RelayStore } from "./store.js";
 
 type RequestHandlerOptions = {
   adminToken?: string;
+  allowedOrigins?: string[];
   heartbeatIntervalMs?: number;
   serviceVersion?: string;
   startedAt?: Date;
 };
 
-const jsonHeaders = {
+const baseJsonHeaders = {
   "content-type": "application/json; charset=utf-8",
-  "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET,POST,OPTIONS",
   "access-control-allow-headers": "authorization,content-type,x-easycode-relay-token"
 };
 
-const sendJson = (response: ServerResponse, statusCode: number, body: unknown): void => {
-  response.writeHead(statusCode, jsonHeaders);
+type ResponseHeaders = Record<string, string>;
+
+const sendJson = (response: ServerResponse, statusCode: number, body: unknown, headers: ResponseHeaders): void => {
+  response.writeHead(statusCode, headers);
   response.end(JSON.stringify(body));
 };
 
@@ -34,17 +36,22 @@ const readBody = async (request: IncomingMessage): Promise<unknown> => {
 export const createRequestHandler =
   (store: RelayStore, options: RequestHandlerOptions = {}) =>
   async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const headers = createResponseHeaders(request, options);
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
 
       if (request.method === "OPTIONS") {
-        response.writeHead(204, jsonHeaders);
+        if (!isCorsAllowed(request, options)) {
+          sendJson(response, 403, { error: "Origin not allowed" }, headers);
+          return;
+        }
+        response.writeHead(204, headers);
         response.end();
         return;
       }
 
       if (request.method === "GET" && url.pathname === "/health") {
-        sendJson(response, 200, healthPayload(store, options));
+        sendJson(response, 200, healthPayload(store, options), headers);
         return;
       }
 
@@ -54,16 +61,16 @@ export const createRequestHandler =
           checks: {
             store: true
           }
-        });
+        }, headers);
         return;
       }
 
       if (request.method === "POST" && url.pathname === "/v1/pairings") {
         if (!isAuthorized(request, options.adminToken)) {
-          sendJson(response, 401, { error: "Unauthorized" });
+          sendJson(response, 401, { error: "Unauthorized" }, headers);
           return;
         }
-        sendJson(response, 201, store.createPairing());
+        sendJson(response, 201, store.createPairing(), headers);
         return;
       }
 
@@ -72,17 +79,17 @@ export const createRequestHandler =
         await readBody(request);
         const claimed = store.claimPairing(claimMatch[1]);
         if (!claimed) {
-          sendJson(response, 404, { error: "Pairing code not found or expired" });
+          sendJson(response, 404, { error: "Pairing code not found or expired" }, headers);
           return;
         }
-        sendJson(response, 200, claimed);
+        sendJson(response, 200, claimed, headers);
         return;
       }
 
-      sendJson(response, 404, { error: "Not found" });
+      sendJson(response, 404, { error: "Not found" }, headers);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      sendJson(response, 500, { error: message });
+      sendJson(response, 500, { error: message }, headers);
     }
   };
 
@@ -110,3 +117,32 @@ const healthPayload = (store: RelayStore, options: RequestHandlerOptions) => {
     ...store.getStats()
   };
 };
+
+const createResponseHeaders = (request: IncomingMessage, options: RequestHandlerOptions): ResponseHeaders => {
+  const headers: ResponseHeaders = { ...baseJsonHeaders };
+  const origin = request.headers.origin;
+  const allowedOrigins = normalizeAllowedOrigins(options.allowedOrigins);
+
+  if (allowedOrigins.length === 0 || allowedOrigins.includes("*")) {
+    headers["access-control-allow-origin"] = "*";
+    return headers;
+  }
+
+  if (origin && allowedOrigins.includes(origin)) {
+    headers["access-control-allow-origin"] = origin;
+    headers.vary = "Origin";
+  }
+
+  return headers;
+};
+
+const isCorsAllowed = (request: IncomingMessage, options: RequestHandlerOptions): boolean => {
+  const allowedOrigins = normalizeAllowedOrigins(options.allowedOrigins);
+  if (allowedOrigins.length === 0 || allowedOrigins.includes("*")) return true;
+
+  const origin = request.headers.origin;
+  return Boolean(origin && allowedOrigins.includes(origin));
+};
+
+const normalizeAllowedOrigins = (allowedOrigins: string[] | undefined): string[] =>
+  (allowedOrigins ?? []).map((origin) => origin.trim()).filter(Boolean);

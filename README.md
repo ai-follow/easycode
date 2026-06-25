@@ -48,6 +48,8 @@ interval with `EASYCODE_WS_HEARTBEAT_MS`.
 The desktop agent reconnects automatically and keeps a short in-memory send
 queue while the relay socket is unavailable.
 Use `/health` for diagnostics and `/ready` for container readiness probes.
+Set `EASYCODE_ALLOWED_ORIGINS` to a comma-separated allowlist for hosted mobile
+web clients; the default is `*` for local development.
 
 The desktop agent prints a pairing code. In another terminal:
 

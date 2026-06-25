@@ -62,6 +62,44 @@ test("pairing creation requires the configured admin token", async () => {
   }
 });
 
+test("cors defaults to wildcard and can restrict allowed origins", async () => {
+  const openFixture = await startRelayHttp();
+  try {
+    const open = await fetch(`${openFixture.url}/health`, {
+      headers: {
+        origin: "https://mobile.example"
+      }
+    });
+    assert.equal(open.headers.get("access-control-allow-origin"), "*");
+  } finally {
+    await openFixture.close();
+  }
+
+  const restrictedFixture = await startRelayHttp({
+    allowedOrigins: ["https://allowed.example"]
+  });
+  try {
+    const allowed = await fetch(`${restrictedFixture.url}/health`, {
+      headers: {
+        origin: "https://allowed.example"
+      }
+    });
+    assert.equal(allowed.headers.get("access-control-allow-origin"), "https://allowed.example");
+    assert.equal(allowed.headers.get("vary"), "Origin");
+
+    const deniedPreflight = await fetch(`${restrictedFixture.url}/v1/pairings`, {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://denied.example"
+      }
+    });
+    assert.equal(deniedPreflight.status, 403);
+    assert.equal(deniedPreflight.headers.get("access-control-allow-origin"), null);
+  } finally {
+    await restrictedFixture.close();
+  }
+});
+
 type HandlerOptions = Parameters<typeof createRequestHandler>[1];
 
 const startRelayHttp = async (options: HandlerOptions = {}): Promise<{ url: string; close: () => Promise<void> }> => {

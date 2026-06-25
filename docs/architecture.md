@@ -83,6 +83,10 @@ The desktop relay client also reconnects automatically and queues a bounded set
 of outbound payloads while disconnected. This protects transient relay socket
 loss without changing adapter behavior.
 
+Hosted relays can restrict browser access with `EASYCODE_ALLOWED_ORIGINS`. This
+is CORS hardening for the mobile web client, not a replacement for pairing and
+socket tokens.
+
 ## Production backlog
 
 - Replace in-memory relay store with PostgreSQL and Redis implementations.
