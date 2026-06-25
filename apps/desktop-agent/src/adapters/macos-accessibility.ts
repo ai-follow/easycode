@@ -27,7 +27,7 @@ export type AccessibilitySnapshotInput = {
 };
 
 const INTERACTION_LABEL_PATTERN =
-  /^(approve|allow|accept|yes|ok|okay|continue|proceed|resume|run|retry|reject|deny|decline|no|cancel|stop)$/i;
+  /\b(approve|allow|accept|yes|ok|okay|continue|proceed|resume|run|retry|reject|deny|decline|no|cancel|stop)\b/i;
 
 const IGNORE_TEXT = new Set([
   "accounts",
@@ -136,7 +136,7 @@ export const extractInteractionRequests = (
   const options = elements
     .filter((element) => isButtonElement(element) && element.enabled)
     .map((element) => normalizeText(element.name || element.value || element.description))
-    .filter((label) => INTERACTION_LABEL_PATTERN.test(label))
+    .filter(isUsefulInteractionLabel)
     .filter((label, index, labels) => labels.findIndex((candidate) => candidate.toLowerCase() === label.toLowerCase()) === index)
     .map((label) => ({
       id: `option_${fingerprint([label])}`,
@@ -188,6 +188,13 @@ const isUsefulConversationText = (text: string): boolean => {
   if (IGNORE_TEXT.has(text.toLowerCase())) return false;
   if (/^[\W_]+$/.test(text)) return false;
   return true;
+};
+
+const isUsefulInteractionLabel = (label: string): boolean => {
+  if (label.length < 2) return false;
+  if (label.length > 120) return false;
+  if (IGNORE_TEXT.has(label.toLowerCase())) return false;
+  return INTERACTION_LABEL_PATTERN.test(label);
 };
 
 const normalizeText = (value: string): string => value.replace(/\s+/g, " ").trim();

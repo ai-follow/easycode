@@ -57,6 +57,27 @@ test("extracts client interaction options without interpreting risk", () => {
   assert.equal(interactions[0]?.text, "Codex wants user input");
 });
 
+test("extracts interaction option phrases while ignoring navigation buttons", () => {
+  const elements = parseAccessibilityDump(
+    [
+      "AXStaticText\tstatic text\tAssistant: command needs confirmation\t\t\ttrue",
+      "AXButton\tbutton\tApprove and run\t\t\ttrue",
+      "AXButton\tbutton\tContinue anyway\t\t\ttrue",
+      "AXButton\tbutton\tStop generating\t\t\ttrue",
+      "AXButton\tbutton\tRun and Debug\t\t\ttrue",
+      "AXButton\tbutton\tSearch\t\t\ttrue"
+    ].join("\n")
+  );
+  const messages = extractMessages("cursor", "session_1", elements, "2026-01-01T00:00:00.000Z");
+  const interactions = extractInteractionRequests("cursor", "session_1", elements, messages);
+
+  assert.equal(interactions.length, 1);
+  assert.deepEqual(
+    interactions[0]?.options.map((option) => option.label),
+    ["Approve and run", "Continue anyway", "Stop generating"]
+  );
+});
+
 test("builds a full snapshot with waiting state when buttons are present", () => {
   const snapshot = buildConversationSnapshotFromAccessibility({
     adapterId: "cursor",
