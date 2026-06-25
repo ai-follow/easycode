@@ -21,6 +21,7 @@ export type RelayStoreStats = {
 export type RelayStoreOptions = {
   pairingTtlMs?: number;
   backlogLimit?: number;
+  dedupeLimit?: number;
 };
 
 export type RelayStore = {
@@ -44,10 +45,12 @@ type PairingRecord = {
   connections: Map<string, RelayConnection>;
   backlog: RelayEnvelope[];
   seenEnvelopeIds: Set<string>;
+  seenEnvelopeIdOrder: string[];
 };
 
 const DEFAULT_PAIRING_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_BACKLOG_LIMIT = 200;
+const DEFAULT_DEDUPE_LIMIT = 1000;
 
 const token = (): string => randomBytes(32).toString("base64url");
 const hashToken = (value: string): string => createHash("sha256").update(value).digest("base64url");
@@ -64,10 +67,12 @@ export class MemoryRelayStore implements RelayStore {
   private readonly pairingsByCode = new Map<string, PairingRecord>();
   private readonly pairingTtlMs: number;
   private readonly backlogLimit: number;
+  private readonly dedupeLimit: number;
 
   constructor(options: RelayStoreOptions = {}) {
     this.pairingTtlMs = positiveIntOrDefault(options.pairingTtlMs, DEFAULT_PAIRING_TTL_MS);
     this.backlogLimit = positiveIntOrDefault(options.backlogLimit, DEFAULT_BACKLOG_LIMIT);
+    this.dedupeLimit = positiveIntOrDefault(options.dedupeLimit, DEFAULT_DEDUPE_LIMIT);
   }
 
   async createPairing(): Promise<CreatePairingResponse> {
@@ -83,7 +88,8 @@ export class MemoryRelayStore implements RelayStore {
       nextServerSeq: 1,
       connections: new Map(),
       backlog: [],
-      seenEnvelopeIds: new Set()
+      seenEnvelopeIds: new Set(),
+      seenEnvelopeIdOrder: []
     };
 
     this.pairingsById.set(record.pairId, record);
@@ -168,6 +174,8 @@ export class MemoryRelayStore implements RelayStore {
     };
     record.nextServerSeq += 1;
     record.seenEnvelopeIds.add(envelope.id);
+    record.seenEnvelopeIdOrder.push(envelope.id);
+    this.trimSeenEnvelopeIds(record);
     record.backlog.push(stampedEnvelope);
     if (record.backlog.length > this.backlogLimit) {
       record.backlog.splice(0, record.backlog.length - this.backlogLimit);
@@ -206,6 +214,12 @@ export class MemoryRelayStore implements RelayStore {
         this.pairingsByCode.delete(record.pairingCode);
       }
     }
+  }
+
+  private trimSeenEnvelopeIds(record: PairingRecord): void {
+    if (record.seenEnvelopeIdOrder.length <= this.dedupeLimit) return;
+    const removed = record.seenEnvelopeIdOrder.splice(0, record.seenEnvelopeIdOrder.length - this.dedupeLimit);
+    for (const envelopeId of removed) record.seenEnvelopeIds.delete(envelopeId);
   }
 }
 

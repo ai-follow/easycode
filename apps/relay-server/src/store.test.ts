@@ -67,6 +67,21 @@ test("trims backlog to the configured limit", async () => {
   );
 });
 
+test("trims duplicate tracking to the configured limit", async () => {
+  const store = new MemoryRelayStore({ dedupeLimit: 2 });
+  const pairing = await store.createPairing();
+  const first = envelope(pairing.pairId, "one");
+  const second = envelope(pairing.pairId, "two");
+  const third = envelope(pairing.pairId, "three");
+
+  assert.equal((await store.acceptEnvelope(first)).duplicate, false);
+  assert.equal((await store.acceptEnvelope(second)).duplicate, false);
+  assert.equal((await store.acceptEnvelope(third)).duplicate, false);
+
+  assert.equal((await store.acceptEnvelope(first)).duplicate, false);
+  assert.equal((await store.acceptEnvelope(third)).duplicate, true);
+});
+
 test("uses configured pairing ttl", async () => {
   const store = new MemoryRelayStore({ pairingTtlMs: 1234 });
   const before = Date.now();

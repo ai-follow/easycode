@@ -73,7 +73,8 @@ Each accepted envelope receives a per-pair `serverSeq`. Reconnecting clients can
 pass `afterSeq` to `/v1/ws` to receive only missed backlog items. This is a
 transport cursor, not a business-level acknowledgment.
 The in-memory backlog is bounded by `EASYCODE_RELAY_BACKLOG_LIMIT`, and pairing
-codes expire according to `EASYCODE_PAIRING_TTL_MS`.
+codes expire according to `EASYCODE_PAIRING_TTL_MS`. The in-memory duplicate
+envelope id window is bounded separately by `EASYCODE_RELAY_DEDUPE_LIMIT`.
 The relay sends an `ack` payload back to the sending socket after it accepts an
 envelope. This only means the relay accepted the envelope for forwarding. It is
 not a desktop-client delivery receipt; adapter-level handling is still reported

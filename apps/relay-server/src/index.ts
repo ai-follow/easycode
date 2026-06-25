@@ -19,7 +19,8 @@ const heartbeatIntervalMs = parsePositiveInt(process.env.EASYCODE_WS_HEARTBEAT_M
 const startedAt = new Date();
 const store = createRelayStore(process.env.EASYCODE_RELAY_STORE, {
   pairingTtlMs: parsePositiveInt(process.env.EASYCODE_PAIRING_TTL_MS, 10 * 60 * 1000),
-  backlogLimit: parsePositiveInt(process.env.EASYCODE_RELAY_BACKLOG_LIMIT, 200)
+  backlogLimit: parsePositiveInt(process.env.EASYCODE_RELAY_BACKLOG_LIMIT, 200),
+  dedupeLimit: parsePositiveInt(process.env.EASYCODE_RELAY_DEDUPE_LIMIT, 1000)
 });
 const allowedOrigins = parseAllowedOrigins(process.env.EASYCODE_ALLOWED_ORIGINS);
 const server = createServer(createRequestHandler(store, {
