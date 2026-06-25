@@ -19,10 +19,11 @@ pairing code, save the relay URL and mobile pair token locally, reconnect to
 `client_event` payloads, and send `user_input` payloads back to the desktop
 agent. Interaction responses send the client-provided `optionId` only; EasyCode
 does not interpret approve, reject, stop, or continue semantics.
+Outbound envelopes are kept in a bounded in-memory queue until the relay returns
+transport `ack`, so reconnect retries reuse the same envelope ids.
 
-The current native skeleton still lacks the mobile-web E2EE session manager and
-outbound retry queue. Add those before treating the Flutter app as the primary
-Android client.
+The current native skeleton still lacks the mobile-web E2EE session manager.
+Add that before treating the Flutter app as the primary Android client.
 
 Protocol model generation should use the checked-in schema bundle at
 `../../packages/protocol/schemas/easycode-protocol.schema.json`. Relay HTTP

@@ -30,7 +30,8 @@ device and relays user input back to the selected desktop client.
   PWA metadata.
 - Flutter source skeleton for native Android/iOS that follows the same relay
   protocol shape, including saved pairing credentials and reconnect cursors,
-  once Flutter is available on the machine.
+  plus an in-memory outbound ack queue, once Flutter is available on the
+  machine.
 
 ## Quick start
 

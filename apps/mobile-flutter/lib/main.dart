@@ -47,6 +47,7 @@ class _RelayScreenState extends State<RelayScreen> {
   Timer? reconnectTimer;
   int reconnectAttempt = 0;
   int lastServerSeq = 0;
+  int pendingOutboundCount = 0;
   bool closingIntentionally = false;
   String status = 'Disconnected';
   String pairId = '';
@@ -54,6 +55,8 @@ class _RelayScreenState extends State<RelayScreen> {
   String selectedSessionId = '';
   final messages = <Map<String, dynamic>>[];
   final interactions = <Map<String, dynamic>>[];
+  final queuedEnvelopes = <Map<String, dynamic>>[];
+  final pendingAckEnvelopes = <String, Map<String, dynamic>>{};
 
   @override
   void initState() {
@@ -122,6 +125,7 @@ class _RelayScreenState extends State<RelayScreen> {
         reconnectAttempt = 0;
         applyEnvelope(jsonDecode(event as String) as Map<String, dynamic>);
         if (mounted) setState(() => status = 'Connected');
+        flushQueuedEnvelopes();
       },
       onError: (Object error) {
         if (!mounted || channel != nextChannel) return;
@@ -129,6 +133,7 @@ class _RelayScreenState extends State<RelayScreen> {
       },
       onDone: () {
         if (!mounted || channel != nextChannel) return;
+        requeuePendingAcks();
         setState(() => status = 'Disconnected');
         if (!closingIntentionally && pairId.isNotEmpty && mobileToken.isNotEmpty) {
           scheduleReconnect();
@@ -210,6 +215,9 @@ class _RelayScreenState extends State<RelayScreen> {
       selectedSessionId = '';
       lastServerSeq = 0;
       reconnectAttempt = 0;
+      queuedEnvelopes.clear();
+      pendingAckEnvelopes.clear();
+      pendingOutboundCount = 0;
       messages.clear();
       interactions.clear();
     });
@@ -223,6 +231,29 @@ class _RelayScreenState extends State<RelayScreen> {
     unawaited(rememberServerSeq(envelope));
     final payload = envelope['payload'] as Map<String, dynamic>;
     final kind = payload['kind'] as String;
+
+    if (kind == 'ack') {
+      final refId = payload['refId'] as String?;
+      if (refId != null) {
+        pendingAckEnvelopes.remove(refId);
+        removeQueuedEnvelope(refId);
+        updatePendingOutboundCount();
+      }
+      return;
+    }
+
+    if (kind == 'error') {
+      final refId = payload['refId'] as String?;
+      if (refId != null) {
+        pendingAckEnvelopes.remove(refId);
+        removeQueuedEnvelope(refId);
+        updatePendingOutboundCount();
+      }
+      setState(() => status = payload['message'] as String? ?? 'Relay error');
+      return;
+    }
+
+    if (kind == 'ping') return;
 
     setState(() {
       if (kind == 'desktop_status') {
@@ -254,7 +285,7 @@ class _RelayScreenState extends State<RelayScreen> {
 
   void sendText() {
     final text = messageController.text.trim();
-    if (text.isEmpty || selectedSessionId.isEmpty || channel == null) return;
+    if (text.isEmpty || selectedSessionId.isEmpty) return;
     messageController.clear();
     sendInput({
       'type': 'text',
@@ -286,10 +317,71 @@ class _RelayScreenState extends State<RelayScreen> {
         'input': input,
       },
     };
-    channel?.sink.add(jsonEncode(envelope));
+    sendEnvelope(envelope);
   }
 
   String lastSeqKey(String pairId) => 'easycode:last-server-seq:$pairId';
+
+  void sendEnvelope(Map<String, dynamic> envelope) {
+    if (channel == null || status != 'Connected') {
+      enqueueEnvelope(envelope);
+      return;
+    }
+
+    pendingAckEnvelopes[envelope['id'] as String] = envelope;
+    updatePendingOutboundCount();
+    try {
+      channel?.sink.add(jsonEncode(envelope));
+    } catch (_) {
+      pendingAckEnvelopes.remove(envelope['id']);
+      enqueueEnvelope(envelope);
+    }
+  }
+
+  void enqueueEnvelope(Map<String, dynamic> envelope) {
+    final id = envelope['id'] as String;
+    if (queuedEnvelopes.any((item) => item['id'] == id) || pendingAckEnvelopes.containsKey(id)) return;
+
+    queuedEnvelopes.add(envelope);
+    if (queuedEnvelopes.length > 200) {
+      queuedEnvelopes.removeRange(0, queuedEnvelopes.length - 200);
+    }
+    updatePendingOutboundCount();
+  }
+
+  void flushQueuedEnvelopes() {
+    if (queuedEnvelopes.isEmpty || channel == null || status != 'Connected') return;
+    final queued = List<Map<String, dynamic>>.from(queuedEnvelopes);
+    queuedEnvelopes.clear();
+    updatePendingOutboundCount();
+    for (final envelope in queued) {
+      sendEnvelope(envelope);
+    }
+  }
+
+  void requeuePendingAcks() {
+    if (pendingAckEnvelopes.isEmpty) return;
+    queuedEnvelopes.insertAll(0, pendingAckEnvelopes.values);
+    pendingAckEnvelopes.clear();
+    if (queuedEnvelopes.length > 200) {
+      queuedEnvelopes.removeRange(0, queuedEnvelopes.length - 200);
+    }
+    updatePendingOutboundCount();
+  }
+
+  void removeQueuedEnvelope(String envelopeId) {
+    queuedEnvelopes.removeWhere((item) => item['id'] == envelopeId);
+  }
+
+  void updatePendingOutboundCount() {
+    final nextCount = queuedEnvelopes.length + pendingAckEnvelopes.length;
+    if (pendingOutboundCount == nextCount) return;
+    if (!mounted) {
+      pendingOutboundCount = nextCount;
+      return;
+    }
+    setState(() => pendingOutboundCount = nextCount);
+  }
 
   List<Map<String, dynamic>> dedupeById(List<Map<String, dynamic>> items) {
     final seen = <String>{};
@@ -387,11 +479,20 @@ class _RelayScreenState extends State<RelayScreen> {
             if (pairId.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.all(12),
-                child: Row(
+                child: Column(
                   children: [
-                    Expanded(child: TextField(controller: messageController, decoration: const InputDecoration(hintText: 'Message'))),
-                    const SizedBox(width: 8),
-                    FilledButton(onPressed: sendText, child: const Text('Send')),
+                    if (pendingOutboundCount > 0)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text('Waiting for relay ack: $pendingOutboundCount'),
+                      ),
+                    Row(
+                      children: [
+                        Expanded(child: TextField(controller: messageController, decoration: const InputDecoration(hintText: 'Message'))),
+                        const SizedBox(width: 8),
+                        FilledButton(onPressed: sendText, child: const Text('Send')),
+                      ],
+                    ),
                   ],
                 ),
               ),
