@@ -4,9 +4,12 @@ import {
   RelayPayloadSchema,
   type EncryptedRelayPayload,
   type KeyExchangePayload,
+  type RelayEnvelope,
   type RelayPayload,
   type RelaySource
 } from "@easycode/protocol";
+
+export type E2eeRole = "desktop" | "mobile";
 
 export const E2EE_KEY_EXCHANGE_SUITE = "p256-hkdf-sha256-aes-256-gcm";
 export const E2EE_PAYLOAD_VERSION = 1;
@@ -32,12 +35,15 @@ export type RelayPayloadAadInput = {
   createdAt: string;
 };
 
+export type RelayEnvelopeAadInput = Pick<RelayEnvelope, "id" | "pairId" | "source" | "createdAt">;
+
 export type EncryptRelayPayloadOptions = RelayPayloadKey & {
   aad?: Uint8Array;
 };
 
 export type DecryptRelayPayloadOptions = {
   key: CryptoKey;
+  aad?: Uint8Array;
 };
 
 export type CreateKeyExchangePayloadOptions = {
@@ -53,6 +59,12 @@ export type DeriveRelayPayloadKeyFromPeerOptions = {
   keyId?: string;
 };
 
+export type RelayE2eeSessionOptions = {
+  role: E2eeRole;
+  pairId: string;
+  keyId?: string;
+};
+
 const keyInfo = new TextEncoder().encode("easycode relay payload encryption v1");
 
 export const generateRelayKeySecret = (): Uint8Array => {
@@ -60,6 +72,80 @@ export const generateRelayKeySecret = (): Uint8Array => {
   crypto.getRandomValues(secret);
   return secret;
 };
+
+export class RelayE2eeSession {
+  private payloadKey?: RelayPayloadKey;
+
+  private constructor(
+    private readonly role: E2eeRole,
+    private readonly pairId: string,
+    private readonly keyId: string,
+    private readonly keyPair: CryptoKeyPair
+  ) {}
+
+  static async create(options: RelayE2eeSessionOptions): Promise<RelayE2eeSession> {
+    return new RelayE2eeSession(
+      options.role,
+      options.pairId,
+      options.keyId ?? defaultPayloadKeyId(options.pairId),
+      await generateKeyExchangeKeyPair()
+    );
+  }
+
+  get ready(): boolean {
+    return Boolean(this.payloadKey);
+  }
+
+  async createHello(): Promise<KeyExchangePayload> {
+    return createKeyExchangePayload({
+      phase: this.role === "desktop" ? "desktop_hello" : "mobile_hello",
+      keyId: this.keyId,
+      publicKey: this.keyPair.publicKey
+    });
+  }
+
+  async handleKeyExchange(payload: KeyExchangePayload): Promise<void> {
+    const parsed = KeyExchangePayloadSchema.parse(payload);
+    if (parsed.suite !== E2EE_KEY_EXCHANGE_SUITE) {
+      throw new Error(`Unsupported key exchange suite: ${parsed.suite}`);
+    }
+    if (parsed.keyId !== this.keyId) {
+      throw new Error(`Unexpected key exchange key id: ${parsed.keyId}`);
+    }
+    const expectedPhase = this.role === "desktop" ? "mobile_hello" : "desktop_hello";
+    if (parsed.phase !== expectedPhase) {
+      throw new Error(`Unexpected key exchange phase for ${this.role}: ${parsed.phase}`);
+    }
+    this.payloadKey = await deriveRelayPayloadKeyFromPeer({
+      privateKey: this.keyPair.privateKey,
+      peerPublicKey: parsed.publicKey,
+      pairId: this.pairId,
+      keyId: this.keyId
+    });
+  }
+
+  async encryptEnvelopePayload(
+    envelope: RelayEnvelopeAadInput,
+    payload: CleartextRelayPayload
+  ): Promise<EncryptedRelayPayload> {
+    if (!this.payloadKey) throw new Error("Relay E2EE session is not ready");
+    return encryptRelayPayload(payload, {
+      ...this.payloadKey,
+      aad: relayEnvelopeAad(envelope)
+    });
+  }
+
+  async decryptEnvelopePayload(envelope: RelayEnvelope): Promise<CleartextRelayPayload> {
+    if (!this.payloadKey) throw new Error("Relay E2EE session is not ready");
+    if (envelope.payload.kind !== "encrypted_payload") {
+      throw new Error(`Expected encrypted relay payload, got ${envelope.payload.kind}`);
+    }
+    return decryptRelayPayload(envelope.payload, {
+      key: this.payloadKey.key,
+      aad: relayEnvelopeAad(envelope)
+    });
+  }
+}
 
 export const generateKeyExchangeKeyPair = async (): Promise<CryptoKeyPair> => {
   const keyPair = await crypto.subtle.generateKey(
@@ -168,6 +254,14 @@ export const relayPayloadAad = (input: RelayPayloadAadInput): Uint8Array =>
     version: E2EE_PAYLOAD_VERSION
   }));
 
+export const relayEnvelopeAad = (envelope: RelayEnvelopeAadInput): Uint8Array =>
+  relayPayloadAad({
+    envelopeId: envelope.id,
+    pairId: envelope.pairId,
+    source: envelope.source,
+    createdAt: envelope.createdAt
+  });
+
 export const encryptRelayPayload = async (
   payload: CleartextRelayPayload,
   options: EncryptRelayPayloadOptions
@@ -202,7 +296,10 @@ export const decryptRelayPayload = async (
   }
 
   const plaintext = await crypto.subtle.decrypt(
-    aesGcmParams(base64UrlDecode(encrypted.nonce), encrypted.aad ? base64UrlDecode(encrypted.aad) : undefined),
+    aesGcmParams(
+      base64UrlDecode(encrypted.nonce),
+      options.aad ?? (encrypted.aad ? base64UrlDecode(encrypted.aad) : undefined)
+    ),
     options.key,
     toArrayBuffer(base64UrlDecode(encrypted.ciphertext))
   );
@@ -259,6 +356,8 @@ const safeJson = (raw: string): unknown => {
 };
 
 const stableJson = (value: unknown): string => JSON.stringify(sortJson(value));
+
+const defaultPayloadKeyId = (pairId: string): string => `pair:${pairId}:payload:v1`;
 
 const sortJson = (value: unknown): unknown => {
   if (!value || typeof value !== "object") return value;

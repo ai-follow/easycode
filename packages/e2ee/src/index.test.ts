@@ -10,6 +10,7 @@ import {
   encryptRelayPayload,
   generateKeyExchangeKeyPair,
   generateRelayKeySecret,
+  RelayE2eeSession,
   relayPayloadAad,
   type CleartextRelayPayload
 } from "./index.js";
@@ -100,6 +101,68 @@ test("derives matching relay payload keys from peer public keys", async () => {
   });
 });
 
+test("relay e2ee sessions exchange keys and bind payloads to envelope metadata", async () => {
+  const desktop = await RelayE2eeSession.create({
+    role: "desktop",
+    pairId: "pair_test"
+  });
+  const mobile = await RelayE2eeSession.create({
+    role: "mobile",
+    pairId: "pair_test"
+  });
+
+  await mobile.handleKeyExchange(await desktop.createHello());
+  await desktop.handleKeyExchange(await mobile.createHello());
+
+  const envelope = {
+    id: "env_bound",
+    pairId: "pair_test",
+    source: "desktop" as const,
+    createdAt: "2026-01-01T00:00:00.000Z"
+  };
+  const encrypted = await desktop.encryptEnvelopePayload(envelope, {
+    kind: "ping",
+    nonce: "session"
+  });
+
+  assert.equal(desktop.ready, true);
+  assert.equal(mobile.ready, true);
+  assert.deepEqual(await mobile.decryptEnvelopePayload({
+    ...envelope,
+    payload: encrypted
+  }), {
+    kind: "ping",
+    nonce: "session"
+  });
+  await assert.rejects(
+    () => mobile.decryptEnvelopePayload({
+      ...envelope,
+      id: "env_moved",
+      payload: encrypted
+    }),
+    /operation-specific reason|decrypt/i
+  );
+});
+
+test("relay e2ee sessions reject unexpected key exchange payloads", async () => {
+  const desktop = await RelayE2eeSession.create({
+    role: "desktop",
+    pairId: "pair_test"
+  });
+
+  await assert.rejects(
+    () => desktop.handleKeyExchange({
+      kind: "key_exchange",
+      version: 1,
+      suite: "p256-hkdf-sha256-aes-256-gcm",
+      phase: "desktop_hello",
+      keyId: "pair:pair_test:payload:v1",
+      publicKey: "not-a-real-key"
+    }),
+    /Unexpected key exchange phase/
+  );
+});
+
 test("rejects decryption with a different pair key", async () => {
   const firstKey = await deriveRelayPayloadKey({
     secret: generateRelayKeySecret(),
@@ -150,6 +213,18 @@ test("binds ciphertext to additional authenticated data", async () => {
 
   await assert.rejects(
     () => decryptRelayPayload(tampered, { key: payloadKey.key }),
+    /operation-specific reason|decrypt/i
+  );
+  await assert.rejects(
+    () => decryptRelayPayload(encrypted, {
+      key: payloadKey.key,
+      aad: relayPayloadAad({
+        envelopeId: "env_b",
+        pairId: "pair_test",
+        source: "desktop",
+        createdAt: "2026-01-01T00:00:00.000Z"
+      })
+    }),
     /operation-specific reason|decrypt/i
   );
 });
