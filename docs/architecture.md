@@ -105,6 +105,12 @@ is HTTP CORS and WebSocket Origin hardening for the mobile web client, not a
 replacement for pairing and socket tokens. Non-browser desktop or native clients
 may omit Origin and still authenticate with their pair token.
 
+When `EASYCODE_RELAY_FANOUT=redis`, accepted envelopes are still persisted and
+sequenced by the selected relay store, then published through Redis pub/sub so
+other relay nodes can deliver them to local sockets for the same pair. The
+origin node ignores its own fanout message and delivers directly to its local
+recipients.
+
 ## Relay storage roadmap
 
 The relay store interface is asynchronous so memory and PostgreSQL drivers share
@@ -114,14 +120,13 @@ The initial PostgreSQL store owns durable pairing identity, hashed pair tokens,
 one-time pairing codes, sequence allocation, and persisted envelope metadata.
 The initial schema lives in `infra/postgres/001_initial_relay.sql`.
 
-Redis should own low-latency runtime coordination: short reconnect backlog,
-dedupe sets for recent envelope ids, active socket fan-out hints, and later
-pub/sub if the relay runs more than one node. PostgreSQL remains the durable
-source of truth when Redis evicts data or restarts.
+Redis owns low-latency runtime fanout for multi-node relay deployments.
+PostgreSQL remains the durable source of truth when Redis evicts data or
+restarts.
 
 ## Production backlog
 
-- Add Redis runtime coordination behind the async store contract.
+- Harden Redis fanout for production multi-node deployments.
 - Add end-to-end encryption for envelope payloads after the pairing handshake.
 - Add Tauri shell that embeds the desktop agent core and permissions UI.
 - Harden Cursor conversation extraction with resilient selectors and fixtures

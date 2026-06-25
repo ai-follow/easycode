@@ -4,6 +4,7 @@ import type { Server } from "node:http";
 import { test } from "node:test";
 import WebSocket from "ws";
 import type { RelayEnvelope, RelayPayload } from "@easycode/protocol";
+import { InMemoryRelayFanoutBus } from "./fanout.js";
 import { createRelayServer } from "./server.js";
 import { MemoryRelayStore } from "./store.js";
 
@@ -53,6 +54,65 @@ test("websocket handler acks duplicate envelopes without forwarding them twice",
     desktop.close();
     mobile.close();
     await relay.close();
+  }
+});
+
+test("fanout bus forwards accepted envelopes to local recipients on another relay node", async () => {
+  const store = new MemoryRelayStore();
+  const pairing = await store.createPairing();
+  const claim = await store.claimPairing(pairing.pairingCode);
+  assert.ok(claim);
+
+  const fanoutBus = new InMemoryRelayFanoutBus();
+  const firstRelay = createRelayServer({
+    store,
+    fanoutBus,
+    nodeId: "relay_a",
+    heartbeatIntervalMs: 1000,
+    logger: silentLogger
+  });
+  const secondRelay = createRelayServer({
+    store,
+    fanoutBus,
+    nodeId: "relay_b",
+    heartbeatIntervalMs: 1000,
+    logger: silentLogger
+  });
+  await listen(firstRelay.server);
+  await listen(secondRelay.server);
+
+  const firstAddress = firstRelay.server.address();
+  const secondAddress = secondRelay.server.address();
+  if (typeof firstAddress !== "object" || !firstAddress) throw new Error("First relay test server did not bind to a port");
+  if (typeof secondAddress !== "object" || !secondAddress) throw new Error("Second relay test server did not bind to a port");
+
+  const mobile = await connectSocket(`http://127.0.0.1:${firstAddress.port}`, pairing.pairId, "mobile", claim.mobileToken);
+  const desktop = await connectSocket(`http://127.0.0.1:${secondAddress.port}`, pairing.pairId, "desktop", pairing.desktopToken);
+  const mobileReceived = collectMessages(mobile);
+  const desktopReceived = collectMessages(desktop);
+
+  try {
+    const envelope = mobileEnvelope(pairing.pairId, "env_cross_node", {
+      kind: "user_input",
+      sessionId: "session_test",
+      input: {
+        type: "text",
+        inputId: `input_${randomUUID()}`,
+        text: "cross-node"
+      }
+    });
+
+    mobile.send(JSON.stringify(envelope));
+
+    await waitFor(() => count(mobileReceived, (item) => item.payload.kind === "ack" && item.payload.refId === envelope.id) === 1);
+    await waitFor(() => count(desktopReceived, (item) => item.id === envelope.id) === 1);
+
+    assert.equal(desktopReceived[0]?.payload.kind, "user_input");
+  } finally {
+    mobile.close();
+    desktop.close();
+    await firstRelay.close();
+    await secondRelay.close();
   }
 });
 

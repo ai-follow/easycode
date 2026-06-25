@@ -12,7 +12,8 @@ import {
 } from "@easycode/protocol";
 import { createRequestHandler } from "./http.js";
 import { isOriginAllowed } from "./origins.js";
-import type { RelayStore } from "./store.js";
+import { relayNodeId, type RelayFanoutBus } from "./fanout.js";
+import type { RelayConnection, RelayStore } from "./store.js";
 
 type AliveWebSocket = WebSocket & {
   isAlive?: boolean;
@@ -31,6 +32,8 @@ export type RelayServerOptions = {
   serviceVersion?: string;
   startedAt?: Date;
   logger?: RelayLogger;
+  nodeId?: string;
+  fanoutBus?: RelayFanoutBus;
 };
 
 export type RelayServerRuntime = {
@@ -44,6 +47,8 @@ const DEFAULT_HEARTBEAT_INTERVAL_MS = 30000;
 export const createRelayServer = (options: RelayServerOptions): RelayServerRuntime => {
   const logger = options.logger ?? console;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+  const nodeId = options.nodeId ?? relayNodeId();
+  const localConnections = new Map<string, Map<string, RelayConnection>>();
   const server = createServer(createRequestHandler(options.store, {
     adminToken: options.adminToken,
     allowedOrigins: options.allowedOrigins,
@@ -61,6 +66,39 @@ export const createRelayServer = (options: RelayServerOptions): RelayServerRunti
       logger.error(`[relay] failed to send to ${connectionId}: ${message}`);
     }
   };
+
+  const addLocalConnection = (pairId: string, connection: RelayConnection): void => {
+    let pairConnections = localConnections.get(pairId);
+    if (!pairConnections) {
+      pairConnections = new Map();
+      localConnections.set(pairId, pairConnections);
+    }
+    pairConnections.set(connection.id, connection);
+  };
+
+  const removeLocalConnection = (pairId: string, connectionId: string): void => {
+    const pairConnections = localConnections.get(pairId);
+    pairConnections?.delete(connectionId);
+    if (pairConnections?.size === 0) localConnections.delete(pairId);
+  };
+
+  const sendLocalRecipients = (envelope: RelayEnvelope): void => {
+    const targetRole: DeviceRole = envelope.source === "desktop" ? "mobile" : "desktop";
+    const pairConnections = localConnections.get(envelope.pairId);
+    if (!pairConnections) return;
+    for (const connection of pairConnections.values()) {
+      if (connection.role === targetRole) connection.send(envelope);
+    }
+  };
+
+  if (options.fanoutBus) {
+    void options.fanoutBus.subscribe((message) => {
+      if (message.originId === nodeId) return;
+      sendLocalRecipients(message.envelope);
+    }).catch((error) => {
+      logger.error(`[relay] fanout subscribe failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
 
   const handleUpgrade = async (
     request: IncomingMessage,
@@ -104,12 +142,14 @@ export const createRelayServer = (options: RelayServerOptions): RelayServerRunti
     });
 
     const connectionId = `${role}_${randomUUID()}`;
-    const backlog = await options.store.addConnection(pairId, {
+    const connection: RelayConnection = {
       id: connectionId,
       role,
       send: (envelope) => send(connectionId, (data) => ws.send(data), envelope),
       close: () => ws.close(PAIRING_REVOKED_CLOSE_CODE, PAIRING_REVOKED_CLOSE_REASON)
-    }, afterSeq);
+    };
+    const backlog = await options.store.addConnection(pairId, connection, afterSeq);
+    addLocalConnection(pairId, connection);
 
     logger.log(`[relay] ${role} connected pairId=${pairId} connection=${connectionId}`);
 
@@ -139,7 +179,15 @@ export const createRelayServer = (options: RelayServerOptions): RelayServerRunti
         }
         if (!accepted.envelope) return;
         ws.send(JSON.stringify(serverAck(pairId, envelope.id)));
-        for (const recipient of accepted.recipients) recipient.send(accepted.envelope);
+        sendLocalRecipients(accepted.envelope);
+        if (options.fanoutBus) {
+          void options.fanoutBus.publish({
+            originId: nodeId,
+            envelope: accepted.envelope
+          }).catch((error) => {
+            logger.error(`[relay] fanout publish failed: ${error instanceof Error ? error.message : String(error)}`);
+          });
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         ws.send(JSON.stringify(serverError(pairId, message)));
@@ -147,6 +195,7 @@ export const createRelayServer = (options: RelayServerOptions): RelayServerRunti
     });
 
     ws.on("close", () => {
+      removeLocalConnection(pairId, connectionId);
       void options.store.removeConnection(pairId, connectionId);
       logger.log(`[relay] ${role} disconnected pairId=${pairId} connection=${connectionId}`);
     });
@@ -183,6 +232,7 @@ export const createRelayServer = (options: RelayServerOptions): RelayServerRunti
       for (const client of wss.clients) client.close();
       await closeWebSocketServer(wss);
       await closeHttpServer(server);
+      await options.fanoutBus?.close?.();
       await options.store.close?.();
     }
   };

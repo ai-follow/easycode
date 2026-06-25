@@ -66,6 +66,9 @@ Set `EASYCODE_RELAY_STORE=memory` for local in-memory state, or
 durable PostgreSQL-backed store. The store is behind an interface so Redis and
 other runtime coordination drivers can be added without changing the HTTP or
 WebSocket protocol layers.
+Set `EASYCODE_RELAY_FANOUT=redis` with `EASYCODE_REDIS_URL` when multiple relay
+nodes need to fan out live envelopes to desktop and mobile sockets connected to
+different nodes.
 
 The desktop agent prints a pairing code. In another terminal:
 
@@ -124,6 +127,8 @@ EASYCODE_POSTGRES_URL=postgres://easycode:easycode@localhost:5432/easycode pnpm 
 For containerized local runs, `EASYCODE_POSTGRES_MIGRATE=true` lets the relay
 apply pending PostgreSQL migrations at startup when
 `EASYCODE_RELAY_STORE=postgres`.
+Set `EASYCODE_RELAY_FANOUT=redis` to use the compose Redis service for
+cross-node live envelope fanout.
 The PostgreSQL integration test is skipped by default. Run it against a database
 that has `infra/postgres/001_initial_relay.sql` applied:
 
@@ -131,13 +136,19 @@ that has `infra/postgres/001_initial_relay.sql` applied:
 EASYCODE_POSTGRES_TEST_URL=postgres://easycode:easycode@localhost:5432/easycode pnpm --filter @easycode/relay-server test
 ```
 
+The Redis fanout integration test is also skipped by default. Run it with:
+
+```bash
+EASYCODE_REDIS_TEST_URL=redis://localhost:6379 pnpm --filter @easycode/relay-server test
+```
+
 ## Current limitations
 
-- The relay server has an initial PostgreSQL store driver, but hosted
-  deployment still needs Redis-backed runtime coordination.
+- The relay server has initial PostgreSQL persistence and Redis fanout support,
+  but hosted deployment still needs Redis operational hardening and multi-node
+  soak testing.
 - The memory store is suitable for local validation. PostgreSQL persists
-  envelope replay data, but production still needs Redis-backed runtime
-  coordination before multi-node relay deployment.
+  envelope replay data; Redis fanout handles live delivery across relay nodes.
 - Real desktop-client extraction is heuristic. The macOS adapter reads the
   Accessibility tree and works best when the target client exposes chat text and
   buttons through native accessibility nodes. Cursor should be validated first.

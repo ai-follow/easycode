@@ -16,7 +16,9 @@ services:
       EASYCODE_RELAY_DEDUPE_LIMIT: ${EASYCODE_RELAY_DEDUPE_LIMIT:-1000}
       EASYCODE_POSTGRES_URL: ${EASYCODE_POSTGRES_URL:-postgres://easycode:easycode@postgres:5432/easycode}
       EASYCODE_POSTGRES_MIGRATE: ${EASYCODE_POSTGRES_MIGRATE:-false}
+      EASYCODE_RELAY_FANOUT: ${EASYCODE_RELAY_FANOUT:-none}
       EASYCODE_REDIS_URL: ${EASYCODE_REDIS_URL:-redis://redis:6379}
+      EASYCODE_REDIS_FANOUT_CHANNEL: ${EASYCODE_REDIS_FANOUT_CHANNEL:-easycode:relay:fanout}
     depends_on:
       - postgres
       - redis

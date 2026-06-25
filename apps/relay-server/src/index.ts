@@ -1,3 +1,4 @@
+import { createRelayFanoutBus } from "./fanout.js";
 import { parseAllowedOrigins } from "./origins.js";
 import { runPostgresMigrations } from "./postgres-migrations.js";
 import { createRelayServer } from "./server.js";
@@ -26,6 +27,10 @@ const main = async (): Promise<void> => {
     store,
     adminToken: process.env.EASYCODE_RELAY_ADMIN_TOKEN,
     allowedOrigins: parseAllowedOrigins(process.env.EASYCODE_ALLOWED_ORIGINS),
+    fanoutBus: createRelayFanoutBus(process.env.EASYCODE_RELAY_FANOUT, {
+      redisUrl: process.env.EASYCODE_REDIS_URL,
+      channel: process.env.EASYCODE_REDIS_FANOUT_CHANNEL
+    }),
     heartbeatIntervalMs,
     serviceVersion: process.env.npm_package_version,
     startedAt: new Date()
