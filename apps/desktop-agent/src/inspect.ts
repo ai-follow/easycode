@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { buildConversationSnapshotFromAccessibility, parseAccessibilityDump } from "./adapters/macos-accessibility.js";
 import { discoverProcessWindows, dumpAccessibilityTree } from "./adapters/macos-automation.js";
 import type { AdapterName } from "./adapters/index.js";
@@ -10,6 +10,7 @@ type InspectOptions = {
   windowIndex: number;
   raw: boolean;
   json: boolean;
+  inputPath?: string;
   outputPath?: string;
 };
 
@@ -27,6 +28,7 @@ const parseArgs = (): InspectOptions => {
     windowIndex: Number.isInteger(windowIndex) && windowIndex > 0 ? windowIndex : 1,
     raw: args.includes("--raw"),
     json: args.includes("--json"),
+    inputPath: args.includes("--input") ? get("--input", "") : undefined,
     outputPath: args.includes("--output") ? get("--output", "") : undefined
   };
 };
@@ -34,33 +36,21 @@ const parseArgs = (): InspectOptions => {
 const main = async (): Promise<void> => {
   const options = parseArgs();
   const config = resolveMacAdapterConfig(options.adapterName);
+  const capture = await captureRawAccessibility(options, config);
 
-  if (process.platform !== "darwin") {
-    throw new Error("Accessibility inspection is only available on macOS");
-  }
-
-  const windows = await discoverProcessWindows(config.processName);
-  if (windows.length === 0) {
-    throw new Error(`No windows found for process ${config.processName}. Is ${config.appName} running?`);
-  }
-
-  const target = windows.find((window) => window.windowIndex === options.windowIndex) ?? windows[0];
-  if (!target) throw new Error(`No inspectable window found for ${config.processName}`);
-
-  const raw = await dumpAccessibilityTree(config.processName, target.windowIndex);
-  const elements = parseAccessibilityDump(raw);
+  const elements = parseAccessibilityDump(capture.raw);
   const snapshot = buildConversationSnapshotFromAccessibility({
     adapterId: config.id,
     sessionId: `inspect_${config.id}`,
-    title: target.title,
+    title: capture.title,
     elements
   });
 
   const result = options.raw
-    ? raw
+    ? capture.raw
     : options.json
-      ? JSON.stringify({ target, elementCount: elements.length, snapshot }, null, 2)
-      : formatSummary(config.appName, target.title, elements.length, snapshot.messages.length, snapshot.pendingInteractions.length);
+      ? JSON.stringify({ target: capture.target, elementCount: elements.length, snapshot }, null, 2)
+      : formatSummary(config.appName, capture.title, elements.length, snapshot.messages.length, snapshot.pendingInteractions.length);
 
   if (options.outputPath) {
     await writeFile(options.outputPath, result, "utf8");
@@ -85,8 +75,43 @@ const formatSummary = (
     `Parsed messages: ${messageCount}`,
     `Parsed interaction requests: ${interactionCount}`,
     "",
-    "Use --json for parsed snapshot details or --raw --output fixture.txt for a raw dump."
+    "Use --json for parsed snapshot details, --raw --output fixture.txt for a raw dump, or --input fixture.txt to replay one."
   ].join("\n");
+
+const captureRawAccessibility = async (
+  options: InspectOptions,
+  config: ReturnType<typeof resolveMacAdapterConfig>
+): Promise<{ raw: string; title: string; target: unknown }> => {
+  if (options.inputPath) {
+    const raw = await readFile(options.inputPath, "utf8");
+    return {
+      raw,
+      title: options.inputPath,
+      target: {
+        source: "fixture",
+        path: options.inputPath
+      }
+    };
+  }
+
+  if (process.platform !== "darwin") {
+    throw new Error("Live accessibility inspection is only available on macOS. Use --input fixture.txt to replay a saved dump.");
+  }
+
+  const windows = await discoverProcessWindows(config.processName);
+  if (windows.length === 0) {
+    throw new Error(`No windows found for process ${config.processName}. Is ${config.appName} running?`);
+  }
+
+  const target = windows.find((window) => window.windowIndex === options.windowIndex) ?? windows[0];
+  if (!target) throw new Error(`No inspectable window found for ${config.processName}`);
+
+  return {
+    raw: await dumpAccessibilityTree(config.processName, target.windowIndex),
+    title: target.title,
+    target
+  };
+};
 
 main().catch((error) => {
   console.error(`[inspect] fatal: ${error instanceof Error ? error.message : String(error)}`);

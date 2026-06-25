@@ -323,6 +323,29 @@ export const App = () => {
     });
   };
 
+  const forgetPairing = () => {
+    if (typeof reconnectTimerRef.current === "number") {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = undefined;
+    }
+    if (socketRef.current) {
+      socketRef.current.onclose = null;
+      socketRef.current.close();
+      socketRef.current = null;
+    }
+    if (pairId) window.localStorage.removeItem(lastSeqKey(pairId));
+    window.localStorage.removeItem(pairingStorageKey);
+    reconnectAttemptRef.current = 0;
+    lastServerSeqRef.current = 0;
+    setPairId("");
+    setMobileToken("");
+    setSessions({});
+    setSelectedSessionId("");
+    setDraft("");
+    setError("");
+    setStatus("disconnected");
+  };
+
   return (
     <main className="shell">
       <header className="topbar">
@@ -352,6 +375,11 @@ export const App = () => {
           <button type="submit" disabled={pairingCode.length !== 6 || status === "claiming" || status === "connecting"}>
             Connect
           </button>
+          {pairId && mobileToken ? (
+            <button type="button" className="secondary" onClick={forgetPairing}>
+              Forget pairing
+            </button>
+          ) : null}
           {error ? <p className="error">{error}</p> : null}
         </form>
       ) : (
@@ -365,6 +393,9 @@ export const App = () => {
               ))}
             </select>
             <span>{selected?.state?.status ?? "attached"}</span>
+            <button type="button" className="iconlink" onClick={forgetPairing}>
+              Forget
+            </button>
           </div>
 
           <div className="messages" aria-live="polite">

@@ -127,6 +127,20 @@ button:disabled {
   background: #94a3b8;
 }
 
+button.secondary {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+button.iconlink {
+  min-height: 32px;
+  padding: 0 10px;
+  background: transparent;
+  color: #4b5563;
+  border: 1px solid #d1d5db;
+  font-size: 12px;
+}
+
 .error {
   margin: 0;
   color: #b91c1c;
@@ -153,7 +167,7 @@ button:disabled {
 
 .sessionbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 10px;
   align-items: center;
   padding: 10px 12px;

@@ -1,0 +1,7 @@
+AXStaticText	static text	User: build a relay for Cursor			
+AXStaticText	static text	Assistant: I will relay messages without making approval decisions.			
+AXStaticText	static text	Codex wants user input			
+AXButton	button	approve			true
+AXButton	button	reject			true
+AXButton	button	stop			true
+AXButton	button	continue			true
