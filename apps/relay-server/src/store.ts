@@ -66,7 +66,10 @@ export class RelayStore {
     const record = this.pairingsByCode.get(code);
     if (!record) return undefined;
 
-    record.mobileToken ??= token();
+    if (record.mobileToken) return undefined;
+
+    record.mobileToken = token();
+    this.pairingsByCode.delete(code);
 
     return {
       pairId: record.pairId,
@@ -143,7 +146,9 @@ export class RelayStore {
     for (const record of this.pairingsById.values()) {
       if (record.mobileToken || record.expiresAtMs > now) continue;
       this.pairingsById.delete(record.pairId);
-      this.pairingsByCode.delete(record.pairingCode);
+      if (this.pairingsByCode.get(record.pairingCode) === record) {
+        this.pairingsByCode.delete(record.pairingCode);
+      }
     }
   }
 }

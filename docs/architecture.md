@@ -65,7 +65,7 @@ client-specific option labels such as approve, reject, continue, or stop.
 Pairing creation can be protected with `EASYCODE_RELAY_ADMIN_TOKEN`. When set,
 desktop agents must send the same value as a bearer token or
 `x-easycode-relay-token` header to create a pairing. Claiming an existing
-pairing still uses the short pairing code.
+pairing uses a short one-time pairing code.
 
 Each accepted envelope receives a per-pair `serverSeq`. Reconnecting clients can
 pass `afterSeq` to `/v1/ws` to receive only missed backlog items. This is a

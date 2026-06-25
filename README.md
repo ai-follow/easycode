@@ -55,7 +55,7 @@ pnpm dev:mobile
 ```
 
 Open the Vite URL on desktop or Android, enter `http://localhost:8787`, then
-claim the pairing code shown by the desktop agent.
+claim the one-time pairing code shown by the desktop agent.
 After the first successful claim, the mobile web client stores the pairing
 credentials locally and will reconnect automatically.
 

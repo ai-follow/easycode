@@ -47,6 +47,19 @@ test("ignores duplicate envelope ids", () => {
   assert.equal(backlog.length, 1);
 });
 
+test("allows a pairing code to be claimed only once", () => {
+  const store = new RelayStore();
+  const pairing = store.createPairing();
+
+  const firstClaim = store.claimPairing(pairing.pairingCode);
+  const secondClaim = store.claimPairing(pairing.pairingCode);
+
+  assert.ok(firstClaim);
+  assert.equal(firstClaim.pairId, pairing.pairId);
+  assert.equal(secondClaim, undefined);
+  assert.equal(store.authenticate(pairing.pairId, "mobile", firstClaim.mobileToken), true);
+});
+
 const envelope = (pairId: string, id: string): RelayEnvelope => ({
   id: `env_${id}`,
   pairId,
