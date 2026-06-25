@@ -1,0 +1,18 @@
+{
+  "name": "EasyCode",
+  "short_name": "EasyCode",
+  "description": "Remote message relay for desktop AI coding clients.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f7f9",
+  "theme_color": "#111827",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

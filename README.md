@@ -17,7 +17,8 @@ device and relays user input back to the selected desktop client.
   window discovery, visible text snapshots, interaction option extraction, and
   clipboard-based input delivery.
 - Mobile-first web/PWA client for Android browser validation, with saved pairing
-  credentials, automatic reconnect, and `afterSeq` replay recovery.
+  credentials, automatic reconnect, `afterSeq` replay recovery, and installable
+  PWA metadata.
 - Flutter source skeleton that uses the same protocol shape once Flutter is
   available on the machine.
 
@@ -65,6 +66,8 @@ After the first successful claim, the mobile web client stores the pairing
 credentials locally and will reconnect automatically.
 Use `Forget pairing` in the mobile web client to clear local credentials and
 revoke the relay pairing.
+On Android Chrome, use the browser install prompt or "Add to Home screen" after
+opening the mobile web URL.
 
 ## Project layout
 
