@@ -3,11 +3,16 @@ import type { RelayEnvelope, UserInput } from "@easycode/protocol";
 import type { AdapterName } from "./adapters/index.js";
 import { createAdapter } from "./adapters/index.js";
 import { createPairing, DesktopRelayClient } from "./relay-client.js";
+import { formatTargets, selectTarget } from "./target-selection.js";
 
 type CliOptions = {
   serverUrl: string;
   adapterName: AdapterName;
   relayToken?: string;
+  targetId?: string;
+  targetIndex?: number;
+  targetTitle?: string;
+  listTargets: boolean;
 };
 
 const parseArgs = (): CliOptions => {
@@ -26,7 +31,11 @@ const parseArgs = (): CliOptions => {
   return {
     serverUrl: get("--server", process.env.EASYCODE_SERVER_URL ?? "http://localhost:8787"),
     adapterName: get("--adapter", process.env.EASYCODE_ADAPTER ?? "mock") as AdapterName,
-    relayToken: getOptional("--relay-token") ?? process.env.EASYCODE_RELAY_TOKEN ?? process.env.EASYCODE_RELAY_ADMIN_TOKEN
+    relayToken: getOptional("--relay-token") ?? process.env.EASYCODE_RELAY_TOKEN ?? process.env.EASYCODE_RELAY_ADMIN_TOKEN,
+    targetId: getOptional("--target"),
+    targetIndex: parseOptionalIndex(getOptional("--target-index")),
+    targetTitle: getOptional("--target-title"),
+    listTargets: args.includes("--list-targets")
   };
 };
 
@@ -36,19 +45,23 @@ const main = async (): Promise<void> => {
 
   console.log(`[desktop] using adapter=${options.adapterName} server=${options.serverUrl}`);
 
-  const pairing = await createPairing(options.serverUrl, options.relayToken);
-  console.log(`[desktop] pairing code: ${pairing.pairingCode}`);
-  console.log("[desktop] open the mobile client and claim this code before it expires.");
-
   const targets = await adapter.discoverClients();
   if (targets.length === 0) {
     throw new Error(`No targets found for adapter ${options.adapterName}`);
   }
 
-  const target = targets[0];
-  if (!target) throw new Error(`No target selected for adapter ${options.adapterName}`);
+  if (options.listTargets) {
+    console.log(formatTargets(targets));
+    return;
+  }
+
+  const target = selectTarget(targets, options);
   const session = await adapter.attach(target);
   console.log(`[desktop] attached session=${session.sessionId} target="${target.title}"`);
+
+  const pairing = await createPairing(options.serverUrl, options.relayToken);
+  console.log(`[desktop] pairing code: ${pairing.pairingCode}`);
+  console.log("[desktop] open the mobile client and claim this code before it expires.");
 
   let relay: DesktopRelayClient;
   const handleEnvelope = async (envelope: RelayEnvelope): Promise<void> => {
@@ -122,3 +135,9 @@ main().catch((error) => {
   console.error(`[desktop] fatal: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });
+
+function parseOptionalIndex(value: string | undefined): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}

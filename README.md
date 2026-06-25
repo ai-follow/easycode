@@ -109,6 +109,15 @@ desktop agent. Then start one of the real adapters:
 pnpm dev:desktop -- --adapter cursor --server http://localhost:8787
 ```
 
+When a client has multiple windows, list and select a target explicitly:
+
+```bash
+pnpm dev:desktop -- --adapter cursor --list-targets
+pnpm dev:desktop -- --adapter cursor --target-index 1
+pnpm dev:desktop -- --adapter cursor --target "cursor:window:1"
+pnpm dev:desktop -- --adapter cursor --target-title easycode
+```
+
 Available adapter names are `cursor`, `codex`, `claude-code`, and `mock`.
 The polling interval defaults to 2500 ms and can be changed with:
 
