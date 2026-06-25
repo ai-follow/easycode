@@ -118,7 +118,7 @@ rejects the saved desktop token, the CLI deletes the local pairing state and
 creates a fresh pairing code.
 When the user starts the CLI with `--reset-pairing`, it first attempts to revoke
 the saved relay pairing with the stored desktop token, then clears local pairing
-state and creates a new pairing.
+and E2EE state for that pair before creating a new pairing.
 When E2EE is enabled, desktop ECDH state is persisted through a small store
 interface. The CLI uses a local file store under `.easycode/e2ee` by default;
 the future Tauri shell should replace that implementation with platform secure

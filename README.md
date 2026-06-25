@@ -90,7 +90,7 @@ The desktop agent also stores its pairing credentials in `.easycode/pairing.json
 by default, so restarting the agent does not require claiming a new code. Use
 `EASYCODE_PAIRING_STATE_FILE` or `--pairing-state-file` to override the file,
 and `--reset-pairing` to revoke the saved relay pairing when reachable, discard
-the local desktop pairing state, and create a new one.
+the local desktop pairing/E2EE state, and create a new one.
 Like the desktop agent, the mobile web client keeps in-memory outbound
 envelopes with stable ids until the relay returns a transport `ack`.
 Use `Forget pairing` in the mobile web client to clear local credentials and
