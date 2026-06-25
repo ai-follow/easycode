@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 void main() {
@@ -32,11 +35,19 @@ class RelayScreen extends StatefulWidget {
 }
 
 class _RelayScreenState extends State<RelayScreen> {
+  static const pairingServerUrlKey = 'easycode:pairing:serverUrl';
+  static const pairingPairIdKey = 'easycode:pairing:pairId';
+  static const pairingMobileTokenKey = 'easycode:pairing:mobileToken';
+
   final serverController = TextEditingController(text: 'http://localhost:8787');
   final codeController = TextEditingController();
   final messageController = TextEditingController();
 
   WebSocketChannel? channel;
+  Timer? reconnectTimer;
+  int reconnectAttempt = 0;
+  int lastServerSeq = 0;
+  bool closingIntentionally = false;
   String status = 'Disconnected';
   String pairId = '';
   String mobileToken = '';
@@ -45,7 +56,15 @@ class _RelayScreenState extends State<RelayScreen> {
   final interactions = <Map<String, dynamic>>[];
 
   @override
+  void initState() {
+    super.initState();
+    unawaited(restorePairing());
+  }
+
+  @override
   void dispose() {
+    reconnectTimer?.cancel();
+    closingIntentionally = true;
     channel?.sink.close();
     serverController.dispose();
     codeController.dispose();
@@ -58,6 +77,7 @@ class _RelayScreenState extends State<RelayScreen> {
     final server = serverController.text.trim();
     final code = codeController.text.trim();
     final response = await http.post(Uri.parse('$server/v1/pairings/$code/claim'));
+    if (!mounted) return;
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       setState(() => status = 'Claim failed: ${response.body}');
@@ -67,33 +87,140 @@ class _RelayScreenState extends State<RelayScreen> {
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     pairId = body['pairId'] as String;
     mobileToken = body['mobileToken'] as String;
+    await savePairing(server, pairId, mobileToken);
+    if (!mounted) return;
     connectSocket();
   }
 
   void connectSocket() {
+    reconnectTimer?.cancel();
+    reconnectTimer = null;
+    closingIntentionally = false;
+
     final uri = Uri.parse(serverController.text.trim());
+    final queryParameters = <String, String>{
+      'pairId': pairId,
+      'role': 'mobile',
+      'token': mobileToken,
+      if (lastServerSeq > 0) 'afterSeq': '$lastServerSeq',
+    };
     final wsUri = uri.replace(
       scheme: uri.scheme == 'https' ? 'wss' : 'ws',
       path: '/v1/ws',
-      queryParameters: {
-        'pairId': pairId,
-        'role': 'mobile',
-        'token': mobileToken,
-      },
+      queryParameters: queryParameters,
     );
 
+    final previousChannel = channel;
+    channel = null;
+    previousChannel?.sink.close();
     final nextChannel = WebSocketChannel.connect(wsUri);
     channel = nextChannel;
-    setState(() => status = 'Connected');
+    setState(() => status = 'Connecting');
 
     nextChannel.stream.listen(
-      (event) => applyEnvelope(jsonDecode(event as String) as Map<String, dynamic>),
-      onError: (Object error) => setState(() => status = 'Socket error: $error'),
-      onDone: () => setState(() => status = 'Disconnected'),
+      (event) {
+        reconnectAttempt = 0;
+        applyEnvelope(jsonDecode(event as String) as Map<String, dynamic>);
+        if (mounted) setState(() => status = 'Connected');
+      },
+      onError: (Object error) {
+        if (!mounted || channel != nextChannel) return;
+        setState(() => status = 'Socket error: $error');
+      },
+      onDone: () {
+        if (!mounted || channel != nextChannel) return;
+        setState(() => status = 'Disconnected');
+        if (!closingIntentionally && pairId.isNotEmpty && mobileToken.isNotEmpty) {
+          scheduleReconnect();
+        }
+      },
     );
   }
 
+  Future<void> restorePairing() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+
+    final storedServerUrl = prefs.getString(pairingServerUrlKey);
+    final storedPairId = prefs.getString(pairingPairIdKey);
+    final storedMobileToken = prefs.getString(pairingMobileTokenKey);
+    if (storedServerUrl == null || storedPairId == null || storedMobileToken == null) return;
+    if (storedServerUrl.isEmpty || storedPairId.isEmpty || storedMobileToken.isEmpty) return;
+
+    serverController.text = storedServerUrl;
+    pairId = storedPairId;
+    mobileToken = storedMobileToken;
+    lastServerSeq = prefs.getInt(lastSeqKey(storedPairId)) ?? 0;
+    if (mounted) setState(() => status = 'Connecting');
+    connectSocket();
+  }
+
+  Future<void> savePairing(String serverUrl, String pairId, String mobileToken) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(pairingServerUrlKey, serverUrl);
+    await prefs.setString(pairingPairIdKey, pairId);
+    await prefs.setString(pairingMobileTokenKey, mobileToken);
+  }
+
+  Future<void> rememberServerSeq(Map<String, dynamic> envelope) async {
+    final serverSeq = envelope['serverSeq'];
+    if (serverSeq is! int || serverSeq <= lastServerSeq) return;
+
+    lastServerSeq = serverSeq;
+    final envelopePairId = envelope['pairId'] as String? ?? pairId;
+    if (envelopePairId.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(lastSeqKey(envelopePairId), serverSeq);
+  }
+
+  void scheduleReconnect() {
+    if (reconnectTimer != null) return;
+    reconnectAttempt += 1;
+    final delayMs = math.min(10000, 1000 * (1 << math.min(reconnectAttempt - 1, 4)));
+    reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
+      reconnectTimer = null;
+      if (pairId.isEmpty || mobileToken.isEmpty) return;
+      connectSocket();
+    });
+  }
+
+  Future<void> forgetPairing() async {
+    closingIntentionally = true;
+    reconnectTimer?.cancel();
+    reconnectTimer = null;
+    final previousChannel = channel;
+    channel = null;
+    previousChannel?.sink.close();
+
+    final previousServerUrl = serverController.text.trim();
+    final previousPairId = pairId;
+    final previousMobileToken = mobileToken;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(pairingServerUrlKey);
+    await prefs.remove(pairingPairIdKey);
+    await prefs.remove(pairingMobileTokenKey);
+    if (previousPairId.isNotEmpty) await prefs.remove(lastSeqKey(previousPairId));
+    if (!mounted) return;
+
+    setState(() {
+      status = 'Disconnected';
+      pairId = '';
+      mobileToken = '';
+      selectedSessionId = '';
+      lastServerSeq = 0;
+      reconnectAttempt = 0;
+      messages.clear();
+      interactions.clear();
+    });
+
+    if (previousServerUrl.isNotEmpty && previousPairId.isNotEmpty && previousMobileToken.isNotEmpty) {
+      unawaited(revokePairing(previousServerUrl, previousPairId, previousMobileToken));
+    }
+  }
+
   void applyEnvelope(Map<String, dynamic> envelope) {
+    unawaited(rememberServerSeq(envelope));
     final payload = envelope['payload'] as Map<String, dynamic>;
     final kind = payload['kind'] as String;
 
@@ -108,18 +235,18 @@ class _RelayScreenState extends State<RelayScreen> {
         final snapshot = payload['snapshot'] as Map<String, dynamic>;
         messages
           ..clear()
-          ..addAll((snapshot['messages'] as List<dynamic>).cast<Map<String, dynamic>>());
+          ..addAll(dedupeById((snapshot['messages'] as List<dynamic>).cast<Map<String, dynamic>>()));
         interactions
           ..clear()
-          ..addAll((snapshot['pendingInteractions'] as List<dynamic>).cast<Map<String, dynamic>>());
+          ..addAll(dedupeById((snapshot['pendingInteractions'] as List<dynamic>).cast<Map<String, dynamic>>()));
       } else if (kind == 'client_event') {
         selectedSessionId = payload['sessionId'] as String;
         final event = payload['event'] as Map<String, dynamic>;
         if (event['type'] == 'message') {
-          messages.add(event['payload'] as Map<String, dynamic>);
+          appendUniqueById(messages, event['payload'] as Map<String, dynamic>);
         }
         if (event['type'] == 'interaction_request') {
-          interactions.add(event['payload'] as Map<String, dynamic>);
+          appendUniqueById(interactions, event['payload'] as Map<String, dynamic>);
         }
       }
     });
@@ -162,12 +289,46 @@ class _RelayScreenState extends State<RelayScreen> {
     channel?.sink.add(jsonEncode(envelope));
   }
 
+  String lastSeqKey(String pairId) => 'easycode:last-server-seq:$pairId';
+
+  List<Map<String, dynamic>> dedupeById(List<Map<String, dynamic>> items) {
+    final seen = <String>{};
+    return [
+      for (final item in items)
+        if (item['id'] is String && seen.add(item['id'] as String)) item,
+    ];
+  }
+
+  void appendUniqueById(List<Map<String, dynamic>> items, Map<String, dynamic> next) {
+    final id = next['id'];
+    if (id is String && items.any((item) => item['id'] == id)) return;
+    items.add(next);
+  }
+
+  Future<void> revokePairing(String serverUrl, String pairId, String mobileToken) async {
+    try {
+      await http.delete(
+        Uri.parse('$serverUrl/v1/pairings/$pairId'),
+        headers: {'authorization': 'Bearer $mobileToken'},
+      );
+    } catch (_) {
+      // Local forget should still succeed if the relay is unavailable.
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('EasyCode'),
         subtitle: Text(status),
+        actions: [
+          if (pairId.isNotEmpty)
+            TextButton(
+              onPressed: forgetPairing,
+              child: const Text('Forget'),
+            ),
+        ],
       ),
       body: SafeArea(
         child: Column(

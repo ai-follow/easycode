@@ -28,8 +28,9 @@ device and relays user input back to the selected desktop client.
 - Mobile-first web/PWA client for Android browser validation, with saved pairing
   credentials, automatic reconnect, `afterSeq` replay recovery, and installable
   PWA metadata.
-- Flutter source skeleton that uses the same protocol shape once Flutter is
-  available on the machine.
+- Flutter source skeleton for native Android/iOS that follows the same relay
+  protocol shape, including saved pairing credentials and reconnect cursors,
+  once Flutter is available on the machine.
 
 ## Quick start
 

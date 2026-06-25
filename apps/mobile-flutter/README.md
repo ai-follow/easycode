@@ -14,8 +14,15 @@ flutter run
 ```
 
 The app mirrors the same relay protocol used by `apps/mobile-web`: claim a
-pairing code, connect to `/v1/ws`, render `session_snapshot` and `client_event`
-payloads, and send `user_input` payloads back to the desktop agent.
+pairing code, save the relay URL and mobile pair token locally, reconnect to
+`/v1/ws` with the last seen `afterSeq` cursor, render `session_snapshot` and
+`client_event` payloads, and send `user_input` payloads back to the desktop
+agent. Interaction responses send the client-provided `optionId` only; EasyCode
+does not interpret approve, reject, stop, or continue semantics.
+
+The current native skeleton still lacks the mobile-web E2EE session manager and
+outbound retry queue. Add those before treating the Flutter app as the primary
+Android client.
 
 Protocol model generation should use the checked-in schema bundle at
 `../../packages/protocol/schemas/easycode-protocol.schema.json`. Relay HTTP
