@@ -1,0 +1,14 @@
+AXGroup	group	Chat	Chat	Chat	true
+AXStaticText	static text	You	You	You	true
+AXStaticText	static text	Run the tests	Run the tests	Run the tests	true
+AXStaticText	static text	User: Run the tests	Run the tests	Run the tests	true
+AXStaticText	static text	Cursor	Cursor	Cursor	true
+AXGroup	group	I can run them after approval.	I can run them after approval.	I can run them after approval.	true
+AXStaticText	static text	Assistant: I can run them after approval.	I can run them after approval.	I can run them after approval.	true
+AXGroup	group	Composer	Composer	Composer	true
+AXStaticText	static text	Ask anything	Ask anything	Ask anything	true
+AXStaticText	static text	Press Enter to send	Press Enter to send	Press Enter to send	true
+AXButton	button		Approve and run		true
+AXButton	button			Reject	true
+AXButton	button	Cancel			false
+AXButton	button	Run and Debug			true

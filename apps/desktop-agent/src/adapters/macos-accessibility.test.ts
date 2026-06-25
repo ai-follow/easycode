@@ -36,6 +36,27 @@ test("builds conversation messages from useful visible text", () => {
   assert.equal(messages[1]?.text, "done");
 });
 
+test("keeps same text from different roles as distinct messages", () => {
+  const elements = parseAccessibilityDump(
+    [
+      "AXStaticText\tstatic text\tUser: ok\t\t\ttrue",
+      "AXStaticText\tstatic text\tAssistant: ok\t\t\ttrue"
+    ].join("\n")
+  );
+
+  const messages = extractMessages("cursor", "session_1", elements, "2026-01-01T00:00:00.000Z");
+
+  assert.equal(messages.length, 2);
+  assert.deepEqual(
+    messages.map((message) => [message.role, message.text]),
+    [
+      ["user", "ok"],
+      ["assistant", "ok"]
+    ]
+  );
+  assert.notEqual(messages[0]?.id, messages[1]?.id);
+});
+
 test("combines standalone Cursor speaker labels with following message text", () => {
   const elements = parseAccessibilityDump(
     [
@@ -140,5 +161,29 @@ test("parses Cursor-style confirmation fixture without standalone speaker noise"
   assert.deepEqual(
     snapshot.pendingInteractions[0]?.options.map((option) => option.label),
     ["Approve and run", "Reject", "Stop"]
+  );
+});
+
+test("parses Cursor fixture with duplicated accessibility fields without duplicate messages", async () => {
+  const raw = await readFile(new URL("../../fixtures/cursor-accessibility-duplicate-fields.txt", import.meta.url), "utf8");
+  const snapshot = buildConversationSnapshotFromAccessibility({
+    adapterId: "cursor",
+    sessionId: "session_fixture",
+    title: "Cursor - EasyCode",
+    capturedAt: "2026-01-01T00:00:00.000Z",
+    elements: parseAccessibilityDump(raw)
+  });
+
+  assert.equal(snapshot.state.status, "waiting_for_user");
+  assert.deepEqual(
+    snapshot.messages.map((message) => [message.role, message.text]),
+    [
+      ["user", "Run the tests"],
+      ["assistant", "I can run them after approval."]
+    ]
+  );
+  assert.deepEqual(
+    snapshot.pendingInteractions[0]?.options.map((option) => option.label),
+    ["Approve and run", "Reject"]
   );
 });

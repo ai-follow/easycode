@@ -110,7 +110,8 @@ export const extractMessages = (
     .map(normalizeText)
     .filter(isUsefulConversationText);
 
-  const seenTexts = new Set<string>();
+  const seenMessageKeys = new Set<string>();
+  const seenTextBodies = new Set<string>();
   const messages: ClientMessage[] = [];
   let pendingRole: ClientMessage["role"] | undefined;
 
@@ -121,15 +122,20 @@ export const extractMessages = (
       continue;
     }
 
-    const normalizedKey = text.toLowerCase();
-    if (seenTexts.has(normalizedKey)) continue;
-    seenTexts.add(normalizedKey);
-
     const inferred = inferRole(text);
-    const role = pendingRole ?? inferred.role;
+    const standaloneRole = pendingRole;
+    const role = standaloneRole ?? inferred.role;
     pendingRole = undefined;
+    const normalizedBody = inferred.text.toLowerCase();
+    if (!standaloneRole && !inferred.hasExplicitRole && seenTextBodies.has(normalizedBody)) continue;
+
+    const messageKey = `${role}\u001f${normalizedBody}`;
+    if (seenMessageKeys.has(messageKey)) continue;
+    seenMessageKeys.add(messageKey);
+    seenTextBodies.add(normalizedBody);
+
     messages.push({
-      id: `message_${fingerprint([adapterId, sessionId, inferred.text])}`,
+      id: `message_${fingerprint([adapterId, sessionId, role, inferred.text])}`,
       role,
       text: inferred.text,
       createdAt: capturedAt,
@@ -215,14 +221,18 @@ const isUsefulInteractionLabel = (label: string): boolean => {
 
 const normalizeText = (value: string): string => value.replace(/\s+/g, " ").trim();
 
-const inferRole = (text: string): Pick<ClientMessage, "role" | "text"> => {
+type InferredMessage = Pick<ClientMessage, "role" | "text"> & {
+  hasExplicitRole: boolean;
+};
+
+const inferRole = (text: string): InferredMessage => {
   const match = text.match(/^(user|you|human|assistant|cursor|claude|codex)\s*:\s*(.+)$/i);
-  if (!match) return { role: "client", text };
+  if (!match) return { role: "client", text, hasExplicitRole: false };
 
   const label = match[1]?.toLowerCase();
   const body = match[2]?.trim() || text;
-  if (label === "user" || label === "you" || label === "human") return { role: "user", text: body };
-  return { role: "assistant", text: body };
+  if (label === "user" || label === "you" || label === "human") return { role: "user", text: body, hasExplicitRole: true };
+  return { role: "assistant", text: body, hasExplicitRole: true };
 };
 
 const roleFromStandaloneLabel = (text: string): ClientMessage["role"] | undefined => {
