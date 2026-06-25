@@ -158,7 +158,13 @@ export const App = () => {
       scheduleReconnect(nextPairId, nextMobileToken, relayUrl);
     };
     ws.onmessage = (message) => {
-      const parsed = RelayEnvelopeSchema.safeParse(JSON.parse(String(message.data)));
+      const parsedJson = safeJson(String(message.data));
+      if (typeof parsedJson === "undefined") {
+        setError("Received invalid JSON from relay");
+        return;
+      }
+
+      const parsed = RelayEnvelopeSchema.safeParse(parsedJson);
       if (!parsed.success) {
         setError(parsed.error.message);
         return;
@@ -188,6 +194,13 @@ export const App = () => {
   const applyEnvelope = (envelope: RelayEnvelope) => {
     const payload = envelope.payload;
 
+    if (payload.kind === "error") {
+      setError(payload.refId ? `${payload.message} (${payload.refId})` : payload.message);
+      return;
+    }
+
+    if (payload.kind === "ack" || payload.kind === "ping") return;
+
     if (payload.kind === "desktop_status") {
       setSessions((current) => {
         const next = { ...current };
@@ -200,7 +213,7 @@ export const App = () => {
           };
           next[session.sessionId] = { ...existing, session };
         }
-        if (!selectedSessionId && payload.sessions[0]) setSelectedSessionId(payload.sessions[0].sessionId);
+        setSelectedSessionId((current) => current || payload.sessions[0]?.sessionId || "");
         return next;
       });
       return;
@@ -217,7 +230,7 @@ export const App = () => {
           deliveries: current[payload.sessionId]?.deliveries ?? []
         }
       }));
-      if (!selectedSessionId) setSelectedSessionId(payload.sessionId);
+      setSelectedSessionId((current) => current || payload.sessionId);
       return;
     }
 
@@ -419,6 +432,7 @@ export const App = () => {
               Forget
             </button>
           </div>
+          {error ? <p className="error workspace-error">{error}</p> : null}
 
           <div className="messages" aria-live="polite">
             {(selected?.messages ?? []).map((message) => (
@@ -504,6 +518,14 @@ const loadStoredPairing = (): StoredPairing | undefined => {
 
 const storePairing = (pairing: StoredPairing): void => {
   window.localStorage.setItem(pairingStorageKey, JSON.stringify(pairing));
+};
+
+const safeJson = (raw: string): unknown => {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
 };
 
 const revokePairing = async (serverUrl: string, pairId: string, mobileToken: string): Promise<void> => {

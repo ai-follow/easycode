@@ -149,6 +149,12 @@ button.iconlink {
   overflow-wrap: anywhere;
 }
 
+.workspace-error {
+  padding: 8px 12px;
+  border-bottom: 1px solid #fecaca;
+  background: #fef2f2;
+}
+
 .hint {
   margin: 0;
   padding: 10px 12px;
@@ -162,7 +168,7 @@ button.iconlink {
 .workspace {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto 1fr auto auto;
+  grid-template-rows: auto auto 1fr auto auto;
 }
 
 .sessionbar {
