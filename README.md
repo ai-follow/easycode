@@ -12,6 +12,8 @@ device and relays user input back to the selected desktop client.
 - Shared protocol package with typed relay envelopes and client adapter models.
 - Protocol support for opaque encrypted relay payloads, ready for a later
   desktop/mobile end-to-end key exchange.
+- Shared E2EE helper package for deriving relay payload keys and encrypting or
+  decrypting payload bodies with P-256 ECDH, HKDF, and AES-GCM.
 - WebSocket relay server with memory and PostgreSQL stores, per-pair server
   sequence numbers, replay backlog, and reconnect cursors.
 - Desktop agent core with a complete mock adapter for end-to-end validation.
@@ -100,6 +102,7 @@ opening the mobile web URL.
 
 ```text
 packages/protocol        Shared TypeScript protocol and runtime schemas
+packages/e2ee            Shared encryption helpers for relay payload bodies
 apps/relay-server        Pairing and WebSocket relay server
 apps/desktop-agent       Desktop agent core and client adapters
 apps/mobile-web          Mobile-first PWA implementation for v1 validation
@@ -151,7 +154,8 @@ EASYCODE_REDIS_TEST_URL=redis://localhost:6379 pnpm --filter @easycode/relay-ser
   but hosted deployment still needs Redis operational hardening and multi-node
   soak testing.
 - The protocol can carry encrypted payloads, but clients still send cleartext
-  until the desktop/mobile key exchange is implemented.
+  until the desktop/mobile key exchange and relay-client integration are
+  implemented.
 - The memory store is suitable for local validation. PostgreSQL persists
   envelope replay data; Redis fanout handles live delivery across relay nodes.
 - Real desktop-client extraction is heuristic. The macOS adapter reads the

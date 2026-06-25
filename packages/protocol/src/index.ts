@@ -143,6 +143,16 @@ export const EncryptedRelayPayloadSchema = z.object({
 });
 export type EncryptedRelayPayload = z.infer<typeof EncryptedRelayPayloadSchema>;
 
+export const KeyExchangePayloadSchema = z.object({
+  kind: z.literal("key_exchange"),
+  version: z.literal(1),
+  suite: z.literal("p256-hkdf-sha256-aes-256-gcm"),
+  phase: z.enum(["desktop_hello", "mobile_hello"]),
+  keyId: z.string().min(1),
+  publicKey: z.string().min(1)
+});
+export type KeyExchangePayload = z.infer<typeof KeyExchangePayloadSchema>;
+
 export const RelayPayloadSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("desktop_status"),
@@ -178,6 +188,7 @@ export const RelayPayloadSchema = z.discriminatedUnion("kind", [
     kind: z.literal("ping"),
     nonce: z.string().min(1)
   }),
+  KeyExchangePayloadSchema,
   EncryptedRelayPayloadSchema
 ]);
 export type RelayPayload = z.infer<typeof RelayPayloadSchema>;

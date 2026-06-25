@@ -51,3 +51,20 @@ test("rejects incomplete encrypted relay payloads", () => {
 
   assert.equal(parsed.success, false);
 });
+
+test("accepts key exchange payloads", () => {
+  const parsed = RelayPayloadSchema.parse({
+    kind: "key_exchange",
+    version: 1,
+    suite: "p256-hkdf-sha256-aes-256-gcm",
+    phase: "desktop_hello",
+    keyId: "key_pair_test_1",
+    publicKey: "base64url-spki"
+  });
+
+  assert.equal(parsed.kind, "key_exchange");
+  if (parsed.kind === "key_exchange") {
+    assert.equal(parsed.phase, "desktop_hello");
+    assert.equal(parsed.suite, "p256-hkdf-sha256-aes-256-gcm");
+  }
+});

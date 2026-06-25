@@ -65,6 +65,9 @@ The protocol also accepts `encrypted_payload` envelopes. Those payloads expose
 only encryption metadata and ciphertext to the relay; desktop and mobile clients
 will need a separate end-to-end key exchange before the main app path can switch
 from cleartext payloads to encrypted payloads.
+`@easycode/e2ee` owns the shared AES-GCM payload encryption helpers so desktop,
+mobile web, and future Flutter code use the same P-256 ECDH key exchange,
+HKDF key derivation, base64url encoding, and authenticated-data format.
 
 Pairing creation can be protected with `EASYCODE_RELAY_ADMIN_TOKEN`. When set,
 desktop agents must send the same value as a bearer token or
@@ -133,7 +136,8 @@ restarts.
 ## Production backlog
 
 - Harden Redis fanout for production multi-node deployments.
-- Add end-to-end encryption for envelope payloads after the pairing handshake.
+- Add desktop/mobile key exchange and wire `@easycode/e2ee` into the
+  relay-client paths so business payloads are encrypted after pairing.
 - Add Tauri shell that embeds the desktop agent core and permissions UI.
 - Harden Cursor conversation extraction with resilient selectors and fixtures
   captured from real Cursor accessibility trees.
