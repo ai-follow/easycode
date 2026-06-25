@@ -75,6 +75,10 @@ The mobile web client persists its relay URL and mobile pairing token in local
 storage after a successful claim. On socket close it reconnects with exponential
 backoff and includes the latest stored `afterSeq` cursor.
 
+The relay sends WebSocket heartbeat pings and terminates clients that do not
+respond by the next interval. This lets desktop and mobile clients fall back to
+their reconnect behavior instead of silently hanging on dead sockets.
+
 ## Production backlog
 
 - Replace in-memory relay store with PostgreSQL and Redis implementations.

@@ -43,6 +43,9 @@ EASYCODE_RELAY_ADMIN_TOKEN=change-me pnpm dev:server
 pnpm dev:desktop -- --adapter mock --server http://localhost:8787 --relay-token change-me
 ```
 
+Relay WebSockets use heartbeat pings to clear dead connections. Override the
+interval with `EASYCODE_WS_HEARTBEAT_MS`.
+
 The desktop agent prints a pairing code. In another terminal:
 
 ```bash

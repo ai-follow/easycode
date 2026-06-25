@@ -6,11 +6,16 @@ import { createRequestHandler } from "./http.js";
 import { RelayStore } from "./store.js";
 
 const port = Number(process.env.PORT ?? 8787);
+const heartbeatIntervalMs = parsePositiveInt(process.env.EASYCODE_WS_HEARTBEAT_MS, 30000);
 const store = new RelayStore();
 const server = createServer(createRequestHandler(store, {
   adminToken: process.env.EASYCODE_RELAY_ADMIN_TOKEN
 }));
 const wss = new WebSocketServer({ noServer: true });
+
+type AliveWebSocket = WebSocket & {
+  isAlive?: boolean;
+};
 
 const send = (connectionId: string, wsSend: (data: string) => void, envelope: RelayEnvelope): void => {
   try {
@@ -45,6 +50,12 @@ server.on("upgrade", (request, socket, head) => {
 });
 
 const handleConnection = (ws: WebSocket, pairId: string, role: DeviceRole, afterSeq?: number): void => {
+  const aliveWs = ws as AliveWebSocket;
+  aliveWs.isAlive = true;
+  aliveWs.on("pong", () => {
+    aliveWs.isAlive = true;
+  });
+
   const connectionId = `${role}_${randomUUID()}`;
   const backlog = store.addConnection(pairId, {
     id: connectionId,
@@ -88,6 +99,22 @@ server.listen(port, () => {
   console.log(`[relay] listening on http://localhost:${port}`);
 });
 
+const heartbeat = setInterval(() => {
+  for (const client of wss.clients as Set<AliveWebSocket>) {
+    if (client.isAlive === false) {
+      client.terminate();
+      continue;
+    }
+
+    client.isAlive = false;
+    client.ping();
+  }
+}, heartbeatIntervalMs);
+
+wss.on("close", () => {
+  clearInterval(heartbeat);
+});
+
 const safeJson = (raw: string): unknown => {
   try {
     return JSON.parse(raw);
@@ -101,6 +128,12 @@ const parseOptionalPositiveInt = (value: string | null): number | undefined => {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 };
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 const serverError = (pairId: string, message: string, refId?: string): RelayEnvelope => ({
   id: `server_${randomUUID()}`,
