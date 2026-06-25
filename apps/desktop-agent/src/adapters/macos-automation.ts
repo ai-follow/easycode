@@ -149,7 +149,10 @@ export const pasteAndSubmitText = async (appName: string, text: string): Promise
 };
 
 export const clickButtonByLabel = async (processName: string, windowIndex: number, label: string): Promise<void> => {
-  const script = `
+  await runOsa(clickButtonByLabelScript(), [processName, String(windowIndex), label]);
+};
+
+export const clickButtonByLabelScript = (): string => `
     on run argv
       set processName to item 1 of argv
       set windowIndex to (item 2 of argv) as integer
@@ -162,10 +165,18 @@ export const clickButtonByLabel = async (processName: string, windowIndex: numbe
             try
               if role of candidate is "AXButton" then
                 set candidateName to ""
+                set candidateValue to ""
+                set candidateDescription to ""
                 try
                   set candidateName to name of candidate as text
                 end try
-                if candidateName is buttonLabel then
+                try
+                  set candidateValue to value of candidate as text
+                end try
+                try
+                  set candidateDescription to description of candidate as text
+                end try
+                if candidateName is buttonLabel or candidateValue is buttonLabel or candidateDescription is buttonLabel then
                   click candidate
                   return "clicked"
                 end if
@@ -177,6 +188,3 @@ export const clickButtonByLabel = async (processName: string, windowIndex: numbe
       error "Button not found: " & buttonLabel
     end run
   `;
-
-  await runOsa(script, [processName, String(windowIndex), label]);
-};
