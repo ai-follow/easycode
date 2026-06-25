@@ -7,6 +7,7 @@ import type {
   ClientTarget,
   ConversationSnapshot,
   DeliveryReceipt,
+  InteractionRequest,
   UserInput
 } from "@easycode/protocol";
 import { nowIso } from "@easycode/protocol";
@@ -30,6 +31,8 @@ type MacWindowAdapterOptions = {
   processName: string;
 };
 
+type InteractionResponseInput = Extract<UserInput, { type: "interaction_response" }>;
+
 export class MacWindowAdapter implements ClientAdapter {
   readonly id: ClientAdapterId;
   private readonly appName: string;
@@ -39,6 +42,7 @@ export class MacWindowAdapter implements ClientAdapter {
   private target?: ClientTarget;
   private readonly seenMessageIds = new Set<string>();
   private readonly seenInteractionIds = new Set<string>();
+  private readonly interactionOptionLabelsById = new Map<string, string>();
 
   constructor(options: MacWindowAdapterOptions) {
     this.id = options.id;
@@ -93,6 +97,7 @@ export class MacWindowAdapter implements ClientAdapter {
     this.target = target;
     this.seenMessageIds.clear();
     this.seenInteractionIds.clear();
+    this.interactionOptionLabelsById.clear();
     this.session = {
       sessionId: `session_${randomUUID()}`,
       targetId: target.id,
@@ -136,6 +141,7 @@ export class MacWindowAdapter implements ClientAdapter {
         }
 
         for (const interaction of snapshot.pendingInteractions) {
+          rememberInteractionOptionLabels(this.interactionOptionLabelsById, [interaction]);
           if (this.seenInteractionIds.has(interaction.id)) continue;
           this.seenInteractionIds.add(interaction.id);
           yield {
@@ -174,7 +180,7 @@ export class MacWindowAdapter implements ClientAdapter {
     }
 
     if (input.type === "interaction_response") {
-      await this.clickInteractionOption(input.optionId, String(input.value ?? input.optionId));
+      await this.clickInteractionOption(input.optionId, resolveInteractionResponseLabel(input, this.interactionOptionLabelsById));
       return {
         inputId: input.inputId,
         status: "delivered",
@@ -220,6 +226,7 @@ export class MacWindowAdapter implements ClientAdapter {
   private rememberSnapshot(snapshot: ConversationSnapshot): void {
     for (const message of snapshot.messages) this.seenMessageIds.add(message.id);
     for (const interaction of snapshot.pendingInteractions) this.seenInteractionIds.add(interaction.id);
+    rememberInteractionOptionLabels(this.interactionOptionLabelsById, snapshot.pendingInteractions);
   }
 
   private targetWindowIndex(): number {
@@ -233,3 +240,25 @@ export class MacWindowAdapter implements ClientAdapter {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+export const rememberInteractionOptionLabels = (
+  labelsByOptionId: Map<string, string>,
+  interactions: Array<Pick<InteractionRequest, "options">>
+): void => {
+  for (const interaction of interactions) {
+    for (const option of interaction.options) {
+      labelsByOptionId.set(option.id, option.label);
+    }
+  }
+};
+
+export const resolveInteractionResponseLabel = (
+  input: InteractionResponseInput,
+  labelsByOptionId: ReadonlyMap<string, string>
+): string => {
+  if (typeof input.value === "string" && input.value.trim().length > 0) return input.value;
+  const remembered = labelsByOptionId.get(input.optionId);
+  if (remembered) return remembered;
+  if (typeof input.value !== "undefined" && input.value !== null) return String(input.value);
+  return input.optionId;
+};
