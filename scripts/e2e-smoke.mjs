@@ -73,7 +73,7 @@ try {
     "relay source mismatch error"
   );
 
-  const textEnvelopeId = sendMobile(first.ws, pairId, {
+  const textPayload = {
     kind: "user_input",
     sessionId,
     input: {
@@ -81,21 +81,44 @@ try {
       inputId: `input_${randomUUID()}`,
       text: "hello from e2e smoke"
     }
-  });
+  };
+  const textEnvelopeId = sendMobile(first.ws, pairId, textPayload);
   await waitFor(
     first.received,
     (envelope) => envelope.payload.kind === "ack" && envelope.payload.refId === textEnvelopeId,
     "relay ack for text input"
   );
 
+  const textEcho = (envelope) =>
+    envelope.payload.kind === "client_event" &&
+    envelope.payload.event.type === "message" &&
+    envelope.payload.event.payload.text.includes("Echo from desktop client: hello from e2e smoke");
+
   await waitFor(
     first.received,
-    (envelope) =>
-      envelope.payload.kind === "client_event" &&
-      envelope.payload.event.type === "message" &&
-      envelope.payload.event.payload.text.includes("Echo from desktop client"),
+    textEcho,
     "mock assistant echo"
   );
+
+  const ackCountBeforeDuplicate = countEnvelopes(
+    first.received,
+    (envelope) => envelope.payload.kind === "ack" && envelope.payload.refId === textEnvelopeId
+  );
+  sendMobile(first.ws, pairId, textPayload, textEnvelopeId);
+  await waitFor(
+    first.received,
+    () =>
+      countEnvelopes(
+        first.received,
+        (envelope) => envelope.payload.kind === "ack" && envelope.payload.refId === textEnvelopeId
+      ) > ackCountBeforeDuplicate,
+    "relay ack for duplicate text input"
+  );
+  await sleep(450);
+  const textEchoCount = countEnvelopes(first.received, textEcho);
+  if (textEchoCount !== 1) {
+    throw new Error(`Expected duplicate envelope to be deduped before desktop delivery, got ${textEchoCount} echoes`);
+  }
 
   sendMobile(first.ws, pairId, {
     kind: "user_input",
@@ -263,8 +286,7 @@ function websocketUpgradeStatus(serverUrl, origin, timeoutMs = 5000) {
   });
 }
 
-function sendMobile(ws, pairId, payload) {
-  const id = `env_${randomUUID()}`;
+function sendMobile(ws, pairId, payload, id = `env_${randomUUID()}`) {
   ws.send(
     JSON.stringify({
       id,
@@ -275,6 +297,10 @@ function sendMobile(ws, pairId, payload) {
     })
   );
   return id;
+}
+
+function countEnvelopes(envelopes, predicate) {
+  return envelopes.filter(predicate).length;
 }
 
 function waitFor(received, predicate, label, timeoutMs = 5000) {
