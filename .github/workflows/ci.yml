@@ -9,6 +9,20 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: easycode
+          POSTGRES_USER: easycode
+          POSTGRES_PASSWORD: easycode
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U easycode -d easycode"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
 
     steps:
       - name: Checkout
@@ -33,6 +47,14 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: Test PostgreSQL relay store
+        env:
+          EASYCODE_POSTGRES_URL: postgres://easycode:easycode@localhost:5432/easycode
+          EASYCODE_POSTGRES_TEST_URL: postgres://easycode:easycode@localhost:5432/easycode
+        run: |
+          pnpm --filter @easycode/relay-server migrate:postgres
+          pnpm --filter @easycode/relay-server test
 
       - name: Build
         run: pnpm build

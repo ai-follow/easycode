@@ -134,8 +134,7 @@ EASYCODE_POSTGRES_TEST_URL=postgres://easycode:easycode@localhost:5432/easycode 
 ## Current limitations
 
 - The relay server has an initial PostgreSQL store driver, but hosted
-  deployment still needs database integration tests in CI and Redis-backed
-  runtime coordination.
+  deployment still needs Redis-backed runtime coordination.
 - The memory store is suitable for local validation. PostgreSQL persists
   envelope replay data, but production still needs Redis-backed runtime
   coordination before multi-node relay deployment.
