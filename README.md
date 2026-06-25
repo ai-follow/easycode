@@ -7,6 +7,7 @@ device and relays user input back to the selected desktop client.
 
 ## What is implemented now
 
+- GitHub Actions CI for typecheck, tests, and production builds.
 - Shared protocol package with typed relay envelopes and client adapter models.
 - WebSocket relay server with an in-memory pairing flow, per-pair server
   sequence numbers, replay backlog, and reconnect cursors.
