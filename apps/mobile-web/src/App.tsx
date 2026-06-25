@@ -9,6 +9,7 @@ import {
   type RelayEnvelope,
   type RelayPayload
 } from "@easycode/protocol";
+import { MobileOutbox } from "./mobileOutbox.js";
 import { applyMobileRelayPayload, emptyMobileRelayState, removePendingInteraction } from "./mobileRelayState.js";
 import {
   e2eeStorageKey,
@@ -39,8 +40,7 @@ export const App = () => {
   const lastServerSeqRef = useRef(0);
   const reconnectTimerRef = useRef<number | undefined>(undefined);
   const reconnectAttemptRef = useRef(0);
-  const sendQueueRef = useRef<RelayEnvelope[]>([]);
-  const pendingAcksRef = useRef(new Map<string, RelayEnvelope>());
+  const outboxRef = useRef(new MobileOutbox(mobileSendQueueLimit));
   const e2eeRef = useRef<RelayE2eeSession | null>(null);
   const e2eePairIdRef = useRef("");
 
@@ -221,15 +221,14 @@ export const App = () => {
     const payload = envelope.payload;
 
     if (payload.kind === "ack") {
-      pendingAcksRef.current.delete(payload.refId);
+      outboxRef.current.ack(payload.refId);
       updatePendingOutboundCount();
       return;
     }
 
     if (payload.kind === "error") {
       if (payload.refId) {
-        pendingAcksRef.current.delete(payload.refId);
-        removeQueuedEnvelope(payload.refId);
+        outboxRef.current.reject(payload.refId);
         updatePendingOutboundCount();
       }
       setError(payload.refId ? `${payload.message} (${payload.refId})` : payload.message);
@@ -286,58 +285,37 @@ export const App = () => {
   const sendEnvelope = (envelope: RelayEnvelope) => {
     const ws = socketRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      enqueueEnvelope(envelope);
+      outboxRef.current.enqueue(envelope);
+      updatePendingOutboundCount();
       setError("Socket is reconnecting. Message queued.");
       return;
     }
 
-    pendingAcksRef.current.set(envelope.id, envelope);
+    outboxRef.current.trackPending(envelope);
     updatePendingOutboundCount();
     try {
       ws.send(JSON.stringify(envelope));
     } catch (caught) {
-      pendingAcksRef.current.delete(envelope.id);
-      enqueueEnvelope(envelope);
+      outboxRef.current.reject(envelope.id);
+      outboxRef.current.enqueue(envelope);
+      updatePendingOutboundCount();
       setError(caught instanceof Error ? caught.message : String(caught));
     }
   };
 
-  const enqueueEnvelope = (envelope: RelayEnvelope) => {
-    if (sendQueueRef.current.some((queued) => queued.id === envelope.id)) return;
-    sendQueueRef.current.push(envelope);
-    trimSendQueue();
-    updatePendingOutboundCount();
-  };
-
   const flushSendQueue = () => {
-    const queued = sendQueueRef.current.splice(0);
+    const queued = outboxRef.current.takeQueued();
     updatePendingOutboundCount();
     for (const envelope of queued) sendEnvelope(envelope);
   };
 
   const requeuePendingAcks = () => {
-    const pending = [...pendingAcksRef.current.values()];
-    pendingAcksRef.current.clear();
-    for (const envelope of pending.reverse()) {
-      if (sendQueueRef.current.some((queued) => queued.id === envelope.id)) continue;
-      sendQueueRef.current.unshift(envelope);
-    }
-    trimSendQueue();
+    outboxRef.current.requeuePending();
     updatePendingOutboundCount();
   };
 
-  const removeQueuedEnvelope = (envelopeId: string) => {
-    sendQueueRef.current = sendQueueRef.current.filter((envelope) => envelope.id !== envelopeId);
-  };
-
-  const trimSendQueue = () => {
-    if (sendQueueRef.current.length > mobileSendQueueLimit) {
-      sendQueueRef.current.splice(0, sendQueueRef.current.length - mobileSendQueueLimit);
-    }
-  };
-
   const updatePendingOutboundCount = () => {
-    setPendingOutboundCount(sendQueueRef.current.length + pendingAcksRef.current.size);
+    setPendingOutboundCount(outboxRef.current.pendingCount);
   };
 
   const sendText = async (event: FormEvent) => {
@@ -411,8 +389,7 @@ export const App = () => {
     lastServerSeqRef.current = 0;
     e2eeRef.current = null;
     e2eePairIdRef.current = "";
-    sendQueueRef.current = [];
-    pendingAcksRef.current.clear();
+    outboxRef.current.clear();
     updatePendingOutboundCount();
     setPairId("");
     setMobileToken("");
