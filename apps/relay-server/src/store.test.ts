@@ -3,20 +3,20 @@ import test from "node:test";
 import type { RelayEnvelope } from "@easycode/protocol";
 import { createRelayStore, MemoryRelayStore } from "./store.js";
 
-test("assigns server sequence numbers and filters backlog by cursor", () => {
+test("assigns server sequence numbers and filters backlog by cursor", async () => {
   const store = new MemoryRelayStore();
-  const pairing = store.createPairing();
+  const pairing = await store.createPairing();
 
   const first = envelope(pairing.pairId, "one");
   const second = envelope(pairing.pairId, "two");
 
-  const firstAccepted = store.acceptEnvelope(first);
-  const secondAccepted = store.acceptEnvelope(second);
+  const firstAccepted = await store.acceptEnvelope(first);
+  const secondAccepted = await store.acceptEnvelope(second);
 
   assert.equal(firstAccepted.envelope?.serverSeq, 1);
   assert.equal(secondAccepted.envelope?.serverSeq, 2);
 
-  const backlog = store.addConnection(
+  const backlog = await store.addConnection(
     pairing.pairId,
     {
       id: "mobile_1",
@@ -30,15 +30,15 @@ test("assigns server sequence numbers and filters backlog by cursor", () => {
   assert.equal(backlog[0]?.id, second.id);
 });
 
-test("ignores duplicate envelope ids", () => {
+test("ignores duplicate envelope ids", async () => {
   const store = new MemoryRelayStore();
-  const pairing = store.createPairing();
+  const pairing = await store.createPairing();
   const item = envelope(pairing.pairId, "same");
 
-  assert.equal(store.acceptEnvelope(item).duplicate, false);
-  assert.equal(store.acceptEnvelope(item).duplicate, true);
+  assert.equal((await store.acceptEnvelope(item)).duplicate, false);
+  assert.equal((await store.acceptEnvelope(item)).duplicate, true);
 
-  const backlog = store.addConnection(pairing.pairId, {
+  const backlog = await store.addConnection(pairing.pairId, {
     id: "desktop_1",
     role: "desktop",
     send: () => undefined
@@ -47,27 +47,27 @@ test("ignores duplicate envelope ids", () => {
   assert.equal(backlog.length, 1);
 });
 
-test("allows a pairing code to be claimed only once", () => {
+test("allows a pairing code to be claimed only once", async () => {
   const store = new MemoryRelayStore();
-  const pairing = store.createPairing();
+  const pairing = await store.createPairing();
 
-  const firstClaim = store.claimPairing(pairing.pairingCode);
-  const secondClaim = store.claimPairing(pairing.pairingCode);
+  const firstClaim = await store.claimPairing(pairing.pairingCode);
+  const secondClaim = await store.claimPairing(pairing.pairingCode);
 
   assert.ok(firstClaim);
   assert.equal(firstClaim.pairId, pairing.pairId);
   assert.equal(secondClaim, undefined);
-  assert.equal(store.authenticate(pairing.pairId, "mobile", firstClaim.mobileToken), true);
+  assert.equal(await store.authenticate(pairing.pairId, "mobile", firstClaim.mobileToken), true);
 });
 
-test("revokes a pairing with a desktop or mobile token", () => {
+test("revokes a pairing with a desktop or mobile token", async () => {
   const store = new MemoryRelayStore();
-  const pairing = store.createPairing();
-  const claim = store.claimPairing(pairing.pairingCode);
+  const pairing = await store.createPairing();
+  const claim = await store.claimPairing(pairing.pairingCode);
   assert.ok(claim);
 
   let closed = false;
-  store.addConnection(pairing.pairId, {
+  await store.addConnection(pairing.pairId, {
     id: "mobile_1",
     role: "mobile",
     send: () => undefined,
@@ -76,13 +76,13 @@ test("revokes a pairing with a desktop or mobile token", () => {
     }
   });
 
-  assert.equal(store.revokePairing(pairing.pairId, "wrong-token"), false);
-  assert.equal(store.authenticate(pairing.pairId, "mobile", claim.mobileToken), true);
+  assert.equal(await store.revokePairing(pairing.pairId, "wrong-token"), false);
+  assert.equal(await store.authenticate(pairing.pairId, "mobile", claim.mobileToken), true);
 
-  assert.equal(store.revokePairing(pairing.pairId, claim.mobileToken), true);
+  assert.equal(await store.revokePairing(pairing.pairId, claim.mobileToken), true);
   assert.equal(closed, true);
-  assert.equal(store.authenticate(pairing.pairId, "mobile", claim.mobileToken), false);
-  assert.equal(store.revokePairing(pairing.pairId, claim.mobileToken), false);
+  assert.equal(await store.authenticate(pairing.pairId, "mobile", claim.mobileToken), false);
+  assert.equal(await store.revokePairing(pairing.pairId, claim.mobileToken), false);
 });
 
 test("creates the configured relay store driver", () => {

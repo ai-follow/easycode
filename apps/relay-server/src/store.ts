@@ -19,14 +19,14 @@ export type RelayStoreStats = {
 };
 
 export type RelayStore = {
-  createPairing(): CreatePairingResponse;
-  claimPairing(code: string): ClaimPairingResponse | undefined;
-  authenticate(pairId: string, role: DeviceRole, providedToken: string): boolean;
-  addConnection(pairId: string, connection: RelayConnection, afterSeq?: number): RelayEnvelope[];
-  removeConnection(pairId: string, connectionId: string): void;
-  revokePairing(pairId: string, providedToken: string): boolean;
-  acceptEnvelope(envelope: RelayEnvelope): { duplicate: boolean; envelope?: RelayEnvelope; recipients: RelayConnection[] };
-  getStats(): RelayStoreStats;
+  createPairing(): Promise<CreatePairingResponse>;
+  claimPairing(code: string): Promise<ClaimPairingResponse | undefined>;
+  authenticate(pairId: string, role: DeviceRole, providedToken: string): Promise<boolean>;
+  addConnection(pairId: string, connection: RelayConnection, afterSeq?: number): Promise<RelayEnvelope[]>;
+  removeConnection(pairId: string, connectionId: string): Promise<void>;
+  revokePairing(pairId: string, providedToken: string): Promise<boolean>;
+  acceptEnvelope(envelope: RelayEnvelope): Promise<{ duplicate: boolean; envelope?: RelayEnvelope; recipients: RelayConnection[] }>;
+  getStats(): Promise<RelayStoreStats>;
 };
 
 type PairingRecord = {
@@ -57,7 +57,7 @@ export class MemoryRelayStore implements RelayStore {
   private readonly pairingsById = new Map<string, PairingRecord>();
   private readonly pairingsByCode = new Map<string, PairingRecord>();
 
-  createPairing(): CreatePairingResponse {
+  async createPairing(): Promise<CreatePairingResponse> {
     this.gcExpired();
 
     const expiresAtMs = Date.now() + PAIRING_TTL_MS;
@@ -83,7 +83,7 @@ export class MemoryRelayStore implements RelayStore {
     };
   }
 
-  claimPairing(code: string): ClaimPairingResponse | undefined {
+  async claimPairing(code: string): Promise<ClaimPairingResponse | undefined> {
     this.gcExpired();
     const record = this.pairingsByCode.get(code);
     if (!record) return undefined;
@@ -100,7 +100,7 @@ export class MemoryRelayStore implements RelayStore {
     };
   }
 
-  authenticate(pairId: string, role: DeviceRole, providedToken: string): boolean {
+  async authenticate(pairId: string, role: DeviceRole, providedToken: string): Promise<boolean> {
     this.gcExpired();
     const record = this.pairingsById.get(pairId);
     if (!record) return false;
@@ -108,7 +108,7 @@ export class MemoryRelayStore implements RelayStore {
     return Boolean(record.mobileToken) && providedToken === record.mobileToken;
   }
 
-  addConnection(pairId: string, connection: RelayConnection, afterSeq?: number): RelayEnvelope[] {
+  async addConnection(pairId: string, connection: RelayConnection, afterSeq?: number): Promise<RelayEnvelope[]> {
     const record = this.getRequiredPairing(pairId);
     record.connections.set(connection.id, connection);
     if (typeof afterSeq !== "number" || !Number.isFinite(afterSeq) || afterSeq < 1) {
@@ -117,12 +117,12 @@ export class MemoryRelayStore implements RelayStore {
     return record.backlog.filter((envelope) => (envelope.serverSeq ?? 0) > afterSeq);
   }
 
-  removeConnection(pairId: string, connectionId: string): void {
+  async removeConnection(pairId: string, connectionId: string): Promise<void> {
     const record = this.pairingsById.get(pairId);
     record?.connections.delete(connectionId);
   }
 
-  revokePairing(pairId: string, providedToken: string): boolean {
+  async revokePairing(pairId: string, providedToken: string): Promise<boolean> {
     const record = this.pairingsById.get(pairId);
     if (!record) return false;
     if (providedToken !== record.desktopToken && providedToken !== record.mobileToken) return false;
@@ -139,7 +139,9 @@ export class MemoryRelayStore implements RelayStore {
     return true;
   }
 
-  acceptEnvelope(envelope: RelayEnvelope): { duplicate: boolean; envelope?: RelayEnvelope; recipients: RelayConnection[] } {
+  async acceptEnvelope(
+    envelope: RelayEnvelope
+  ): Promise<{ duplicate: boolean; envelope?: RelayEnvelope; recipients: RelayConnection[] }> {
     const record = this.getRequiredPairing(envelope.pairId);
     if (record.seenEnvelopeIds.has(envelope.id)) {
       return { duplicate: true, recipients: [] };
@@ -161,7 +163,7 @@ export class MemoryRelayStore implements RelayStore {
     return { duplicate: false, envelope: stampedEnvelope, recipients };
   }
 
-  getStats(): RelayStoreStats {
+  async getStats(): Promise<RelayStoreStats> {
     this.gcExpired();
     let connections = 0;
     for (const record of this.pairingsById.values()) connections += record.connections.size;

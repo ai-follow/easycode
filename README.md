@@ -88,7 +88,7 @@ docs/architecture.md     Architecture notes and extension points
 
 ## Relay Docker
 
-The relay server can run in Docker for LAN or hosted validation:
+The relay stack can run in Docker for LAN or hosted validation:
 
 ```bash
 cp .env.example .env
@@ -97,6 +97,9 @@ docker compose up --build relay
 
 Use the same `EASYCODE_RELAY_ADMIN_TOKEN` value when starting a desktop agent
 against that relay.
+The compose file also starts PostgreSQL and Redis so the durable relay driver
+can be implemented against stable local service names. The current server still
+defaults to `EASYCODE_RELAY_STORE=memory`.
 
 ## Current limitations
 

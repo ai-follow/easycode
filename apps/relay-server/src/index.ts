@@ -1,5 +1,6 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 import { randomUUID } from "node:crypto";
+import type { Duplex } from "node:stream";
 import WebSocket, { WebSocketServer, type RawData } from "ws";
 import {
   DeviceRoleSchema,
@@ -39,6 +40,17 @@ const send = (connectionId: string, wsSend: (data: string) => void, envelope: Re
 };
 
 server.on("upgrade", (request, socket, head) => {
+  void handleUpgrade(request, socket, head).catch((error) => {
+    console.error(`[relay] upgrade failed: ${error instanceof Error ? error.message : String(error)}`);
+    socket.destroy();
+  });
+});
+
+const handleUpgrade = async (
+  request: IncomingMessage,
+  socket: Duplex,
+  head: Buffer
+): Promise<void> => {
   const url = new URL(request.url ?? "/", "http://localhost");
   if (url.pathname !== "/v1/ws") {
     socket.destroy();
@@ -50,18 +62,18 @@ server.on("upgrade", (request, socket, head) => {
   const token = url.searchParams.get("token") ?? "";
   const afterSeq = parseOptionalPositiveInt(url.searchParams.get("afterSeq"));
 
-  if (!roleResult.success || !store.authenticate(pairId, roleResult.data, token)) {
+  if (!roleResult.success || !(await store.authenticate(pairId, roleResult.data, token))) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
   }
 
   wss.handleUpgrade(request, socket, head, (ws) => {
-    handleConnection(ws, pairId, roleResult.data, afterSeq);
+    void handleConnection(ws, pairId, roleResult.data, afterSeq);
   });
-});
+};
 
-const handleConnection = (ws: WebSocket, pairId: string, role: DeviceRole, afterSeq?: number): void => {
+const handleConnection = async (ws: WebSocket, pairId: string, role: DeviceRole, afterSeq?: number): Promise<void> => {
   const aliveWs = ws as AliveWebSocket;
   aliveWs.isAlive = true;
   aliveWs.on("pong", () => {
@@ -69,7 +81,7 @@ const handleConnection = (ws: WebSocket, pairId: string, role: DeviceRole, after
   });
 
   const connectionId = `${role}_${randomUUID()}`;
-  const backlog = store.addConnection(pairId, {
+  const backlog = await store.addConnection(pairId, {
     id: connectionId,
     role,
     send: (envelope) => send(connectionId, (data) => ws.send(data), envelope),
@@ -82,7 +94,7 @@ const handleConnection = (ws: WebSocket, pairId: string, role: DeviceRole, after
     if (envelope.source !== role) ws.send(JSON.stringify(envelope));
   }
 
-  ws.on("message", (raw: RawData) => {
+  ws.on("message", async (raw: RawData) => {
     const parsedJson = safeJson(raw.toString());
     const parsed = RelayEnvelopeSchema.safeParse(parsedJson);
     if (!parsed.success) {
@@ -96,14 +108,14 @@ const handleConnection = (ws: WebSocket, pairId: string, role: DeviceRole, after
       return;
     }
 
-    const accepted = store.acceptEnvelope(envelope);
+    const accepted = await store.acceptEnvelope(envelope);
     if (accepted.duplicate) return;
     if (!accepted.envelope) return;
     for (const recipient of accepted.recipients) recipient.send(accepted.envelope);
   });
 
   ws.on("close", () => {
-    store.removeConnection(pairId, connectionId);
+    void store.removeConnection(pairId, connectionId);
     console.log(`[relay] ${role} disconnected pairId=${pairId} connection=${connectionId}`);
   });
 };

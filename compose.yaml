@@ -10,3 +10,29 @@ services:
       EASYCODE_RELAY_ADMIN_TOKEN: ${EASYCODE_RELAY_ADMIN_TOKEN:-change-me}
       EASYCODE_ALLOWED_ORIGINS: ${EASYCODE_ALLOWED_ORIGINS:-*}
       EASYCODE_WS_HEARTBEAT_MS: ${EASYCODE_WS_HEARTBEAT_MS:-30000}
+      EASYCODE_RELAY_STORE: ${EASYCODE_RELAY_STORE:-memory}
+      EASYCODE_POSTGRES_URL: ${EASYCODE_POSTGRES_URL:-postgres://easycode:easycode@postgres:5432/easycode}
+      EASYCODE_REDIS_URL: ${EASYCODE_REDIS_URL:-redis://redis:6379}
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-easycode}
+      POSTGRES_USER: ${POSTGRES_USER:-easycode}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-easycode}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - easycode-postgres:/var/lib/postgresql/data
+      - ./infra/postgres:/docker-entrypoint-initdb.d:ro
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+volumes:
+  easycode-postgres:

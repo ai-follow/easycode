@@ -51,7 +51,7 @@ export const createRequestHandler =
       }
 
       if (request.method === "GET" && url.pathname === "/health") {
-        sendJson(response, 200, healthPayload(store, options), headers);
+        sendJson(response, 200, await healthPayload(store, options), headers);
         return;
       }
 
@@ -70,14 +70,14 @@ export const createRequestHandler =
           sendJson(response, 401, { error: "Unauthorized" }, headers);
           return;
         }
-        sendJson(response, 201, store.createPairing(), headers);
+        sendJson(response, 201, await store.createPairing(), headers);
         return;
       }
 
       const deleteMatch = url.pathname.match(/^\/v1\/pairings\/([^/]+)$/);
       if (request.method === "DELETE" && deleteMatch?.[1]) {
         const token = authToken(request);
-        if (!token || !store.revokePairing(deleteMatch[1], token)) {
+        if (!token || !(await store.revokePairing(deleteMatch[1], token))) {
           sendJson(response, 401, { error: "Unauthorized" }, headers);
           return;
         }
@@ -89,7 +89,7 @@ export const createRequestHandler =
       const claimMatch = url.pathname.match(/^\/v1\/pairings\/([0-9]{6})\/claim$/);
       if (request.method === "POST" && claimMatch?.[1]) {
         await readBody(request);
-        const claimed = store.claimPairing(claimMatch[1]);
+        const claimed = await store.claimPairing(claimMatch[1]);
         if (!claimed) {
           sendJson(response, 404, { error: "Pairing code not found or expired" }, headers);
           return;
@@ -120,7 +120,7 @@ const authToken = (request: IncomingMessage): string | undefined => {
   return authorization.match(/^Bearer\s+(.+)$/i)?.[1];
 };
 
-const healthPayload = (store: RelayStore, options: RequestHandlerOptions) => {
+const healthPayload = async (store: RelayStore, options: RequestHandlerOptions) => {
   const startedAt = options.startedAt ?? new Date();
   return {
     ok: true,
@@ -130,7 +130,7 @@ const healthPayload = (store: RelayStore, options: RequestHandlerOptions) => {
     startedAt: startedAt.toISOString(),
     adminTokenConfigured: Boolean(options.adminToken),
     heartbeatIntervalMs: options.heartbeatIntervalMs,
-    ...store.getStats()
+    ...(await store.getStats())
   };
 };
 
