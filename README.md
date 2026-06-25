@@ -146,6 +146,7 @@ them to mobile as client-provided interaction options.
 To inspect a real client's accessibility tree without connecting the relay:
 
 ```bash
+pnpm --filter @easycode/desktop-agent inspect -- --adapter cursor --list-windows
 pnpm --filter @easycode/desktop-agent inspect -- --adapter cursor --json
 pnpm --filter @easycode/desktop-agent inspect -- --adapter cursor --raw --output cursor-accessibility.txt
 pnpm --filter @easycode/desktop-agent inspect -- --adapter cursor --input cursor-accessibility.txt --json

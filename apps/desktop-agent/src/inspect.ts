@@ -11,6 +11,7 @@ type InspectOptions = {
   windowIndex: number;
   raw: boolean;
   json: boolean;
+  listWindows: boolean;
   redact: boolean;
   inputPath?: string;
   outputPath?: string;
@@ -30,6 +31,7 @@ const parseArgs = (): InspectOptions => {
     windowIndex: Number.isInteger(windowIndex) && windowIndex > 0 ? windowIndex : 1,
     raw: args.includes("--raw"),
     json: args.includes("--json"),
+    listWindows: args.includes("--list-windows"),
     redact: !args.includes("--no-redact"),
     inputPath: args.includes("--input") ? get("--input", "") : undefined,
     outputPath: args.includes("--output") ? get("--output", "") : undefined
@@ -39,6 +41,11 @@ const parseArgs = (): InspectOptions => {
 const main = async (): Promise<void> => {
   const options = parseArgs();
   const config = resolveMacAdapterConfig(options.adapterName);
+  if (options.listWindows) {
+    console.log(await formatInspectableWindows(config));
+    return;
+  }
+
   const capture = await captureRawAccessibility(options, config);
   const raw = options.redact ? redactSensitiveText(capture.raw) : capture.raw;
   const title = options.redact ? redactSensitiveText(capture.title) : capture.title;
@@ -87,6 +94,20 @@ const formatSummary = (
       : "Redaction disabled. Do not share this output unless you have reviewed it.",
     "Use --json for parsed snapshot details, --raw --output fixture.txt for a raw dump, or --input fixture.txt to replay one."
   ].join("\n");
+
+const formatInspectableWindows = async (config: ReturnType<typeof resolveMacAdapterConfig>): Promise<string> => {
+  if (process.platform !== "darwin") {
+    throw new Error("Live window discovery is only available on macOS. Use --input fixture.txt to replay a saved dump.");
+  }
+
+  const windows = await discoverProcessWindows(config.processName);
+  if (windows.length === 0) return `No windows found for process ${config.processName}. Is ${config.appName} running?`;
+
+  return [
+    `Inspectable windows for ${config.appName}:`,
+    ...windows.map((window) => `${window.windowIndex}: ${window.title || "(untitled)"}`)
+  ].join("\n");
+};
 
 const redactSerializable = <T>(value: T): T => {
   try {
