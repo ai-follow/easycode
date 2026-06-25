@@ -12,7 +12,9 @@ const port = await findOpenPort();
 const serverUrl = `http://localhost:${port}`;
 const relayAdminToken = "e2e-relay-admin-token";
 const processes = [];
-const e2eeStateDir = await mkdtemp(join(tmpdir(), "easycode-e2ee-state-"));
+const stateDir = await mkdtemp(join(tmpdir(), "easycode-state-"));
+const e2eeStateDir = join(stateDir, "e2ee");
+const pairingStateFile = join(stateDir, "pairing.json");
 
 try {
   const relay = spawnManaged("relay", "node", ["apps/relay-server/dist/index.js"], {
@@ -34,7 +36,7 @@ try {
     throw new Error(`Expected unauthorized pairing creation to return 401, got ${unauthorizedPairing.status}`);
   }
 
-  const desktop = spawnManaged("desktop", "node", [
+  const spawnDesktop = () => spawnManaged("desktop", "node", [
     "apps/desktop-agent/dist/index.js",
     "--adapter",
     "mock",
@@ -43,9 +45,12 @@ try {
     "--relay-token",
     relayAdminToken
   ], {
-    EASYCODE_E2EE: "1",
-    EASYCODE_E2EE_STATE_DIR: e2eeStateDir
-  });
+      EASYCODE_E2EE: "1",
+      EASYCODE_E2EE_STATE_DIR: e2eeStateDir,
+      EASYCODE_PAIRING_STATE_FILE: pairingStateFile
+    });
+
+  let desktop = spawnDesktop();
   const pairingOutput = await desktop.waitForOutput(/pairing code:\s*(\d{6})/);
   const pairingCode = pairingOutput.match(/pairing code:\s*(\d{6})/)?.[1];
   if (!pairingCode) throw new Error("Desktop agent did not print a pairing code");
@@ -173,10 +178,19 @@ try {
   if (!first.rawReceived.some((envelope) => envelope.payload.kind === "encrypted_payload")) {
     throw new Error("Expected encrypted payloads in the e2e smoke path");
   }
+
   const restoredMobileE2ee = await RelayE2eeSession.restore(await first.e2ee.serialize());
+  desktop.kill("SIGTERM");
+  await desktop.waitForExit();
+
+  desktop = spawnDesktop();
+  await desktop.waitForOutput(/using saved pairing/);
   const replay = await connectMobile(serverUrl, pairId, mobileToken, seqAfterSnapshot, restoredMobileE2ee);
+  await waitFor(replay.received, (envelope) => envelope.payload.kind === "session_snapshot", "session snapshot after desktop restart");
   await sleep(400);
-  const replayedSeqs = replay.received.map((envelope) => envelope.serverSeq ?? 0);
+  const replayedSeqs = replay.received
+    .map((envelope) => envelope.serverSeq)
+    .filter((seq) => typeof seq === "number");
   if (replayedSeqs.length === 0) throw new Error("Expected replayed envelopes after reconnect cursor");
   if (!replayedSeqs.every((seq) => seq > seqAfterSnapshot)) {
     throw new Error(`Replay returned an envelope before cursor ${seqAfterSnapshot}: ${replayedSeqs.join(",")}`);
@@ -200,7 +214,7 @@ try {
   console.log(`e2e smoke ok pair=${pairId} session=${sessionId} replayed=${replayedSeqs.join(",")}`);
 } finally {
   for (const child of processes.reverse()) child.kill("SIGTERM");
-  await rm(e2eeStateDir, {
+  await rm(stateDir, {
     force: true,
     recursive: true
   });
@@ -218,6 +232,9 @@ function spawnManaged(label, command, args, env = {}) {
   processes.push(child);
 
   let output = "";
+  const exit = new Promise((resolve) => {
+    child.once("exit", (code, signal) => resolve({ code, signal }));
+  });
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => {
@@ -235,6 +252,7 @@ function spawnManaged(label, command, args, env = {}) {
   return {
     waitForOutput: (pattern, timeoutMs = 5000) =>
       waitForText(() => output, pattern, `${label} output ${pattern.toString()}`, timeoutMs),
+    waitForExit: () => exit,
     kill: (signal) => {
       if (!child.killed) child.kill(signal);
     }

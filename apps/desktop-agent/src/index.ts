@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-import type { RelayEnvelope, UserInput } from "@easycode/protocol";
+import type { CreatePairingResponse, RelayEnvelope, UserInput } from "@easycode/protocol";
 import type { AdapterName } from "./adapters/index.js";
 import { createAdapter } from "./adapters/index.js";
 import { defaultE2eeStateDir, FileRelayE2eeSessionStore } from "./e2ee-state.js";
-import { createPairing, DesktopRelayClient } from "./relay-client.js";
+import { defaultPairingStateFile, FileDesktopPairingStore, type DesktopPairingStore, type StoredDesktopPairing } from "./pairing-state.js";
+import { createPairing, DesktopRelayClient, RelayAuthenticationError } from "./relay-client.js";
 import { formatTargets, selectTarget } from "./target-selection.js";
 
 type CliOptions = {
@@ -16,6 +17,13 @@ type CliOptions = {
   listTargets: boolean;
   e2ee: boolean;
   e2eeStateDir: string;
+  pairingStateFile: string;
+  resetPairing: boolean;
+};
+
+type ActivePairing = Pick<CreatePairingResponse, "pairId" | "desktopToken" | "pairingCode" | "expiresAt"> & {
+  reused: boolean;
+  lastServerSeq?: number;
 };
 
 const parseArgs = (): CliOptions => {
@@ -40,7 +48,9 @@ const parseArgs = (): CliOptions => {
     targetTitle: getOptional("--target-title"),
     listTargets: args.includes("--list-targets"),
     e2ee: args.includes("--e2ee") || process.env.EASYCODE_E2EE === "1",
-    e2eeStateDir: getOptional("--e2ee-state-dir") ?? defaultE2eeStateDir()
+    e2eeStateDir: getOptional("--e2ee-state-dir") ?? defaultE2eeStateDir(),
+    pairingStateFile: getOptional("--pairing-state-file") ?? defaultPairingStateFile(),
+    resetPairing: args.includes("--reset-pairing") || process.env.EASYCODE_RESET_PAIRING === "1"
   };
 };
 
@@ -49,8 +59,14 @@ const main = async (): Promise<void> => {
   const adapter = createAdapter(options.adapterName);
 
   console.log(`[desktop] using adapter=${options.adapterName} server=${options.serverUrl}`);
+  console.log(`[desktop] pairing state file=${options.pairingStateFile}`);
   if (options.e2ee) console.log("[desktop] e2ee enabled");
   if (options.e2ee) console.log(`[desktop] e2ee state dir=${options.e2eeStateDir}`);
+  const pairingStore = new FileDesktopPairingStore(options.pairingStateFile);
+  if (options.resetPairing) {
+    await pairingStore.delete();
+    console.log("[desktop] cleared saved pairing state");
+  }
 
   const targets = await adapter.discoverClients();
   if (targets.length === 0) {
@@ -66,9 +82,8 @@ const main = async (): Promise<void> => {
   const session = await adapter.attach(target);
   console.log(`[desktop] attached session=${session.sessionId} target="${target.title}"`);
 
-  const pairing = await createPairing(options.serverUrl, options.relayToken);
-  console.log(`[desktop] pairing code: ${pairing.pairingCode}`);
-  console.log("[desktop] open the mobile client and claim this code before it expires.");
+  let pairing = await loadOrCreatePairing(options, pairingStore);
+  logPairing(pairing);
 
   let relay: DesktopRelayClient;
   const handleEnvelope = async (envelope: RelayEnvelope): Promise<void> => {
@@ -76,15 +91,37 @@ const main = async (): Promise<void> => {
     await deliverInput(envelope.payload.sessionId, envelope.payload.input);
   };
 
-  relay = new DesktopRelayClient({
-    serverUrl: options.serverUrl,
-    pairId: pairing.pairId,
-    desktopToken: pairing.desktopToken,
-    e2ee: options.e2ee,
-    e2eeStore: options.e2ee ? new FileRelayE2eeSessionStore(options.e2eeStateDir) : undefined,
-    onEnvelope: handleEnvelope
-  });
-  await relay.connect();
+  const createRelay = (activePairing: ActivePairing): DesktopRelayClient =>
+    new DesktopRelayClient({
+      serverUrl: options.serverUrl,
+      pairId: activePairing.pairId,
+      desktopToken: activePairing.desktopToken,
+      afterSeq: activePairing.lastServerSeq,
+      e2ee: options.e2ee,
+      e2eeStore: options.e2ee ? new FileRelayE2eeSessionStore(options.e2eeStateDir) : undefined,
+      onServerSeq: async (serverSeq) => {
+        if ((activePairing.lastServerSeq ?? 0) >= serverSeq) return;
+        activePairing.lastServerSeq = serverSeq;
+        await pairingStore.saveLastServerSeq(options.serverUrl, activePairing.pairId, serverSeq);
+      },
+      onPairingInvalid: async (invalidPairId) => {
+        if (invalidPairId === activePairing.pairId) await pairingStore.delete();
+      },
+      onEnvelope: handleEnvelope
+    });
+
+  relay = createRelay(pairing);
+  try {
+    await relay.connect();
+  } catch (error) {
+    if (!(pairing.reused && error instanceof RelayAuthenticationError)) throw error;
+    console.error("[desktop] saved pairing was rejected by relay; creating a new pairing");
+    await pairingStore.delete();
+    pairing = await createAndSavePairing(options, pairingStore);
+    logPairing(pairing);
+    relay = createRelay(pairing);
+    await relay.connect();
+  }
 
   relay.send({
     kind: "desktop_status",
@@ -123,6 +160,23 @@ const main = async (): Promise<void> => {
 
   async function deliverInput(sessionId: string, input: UserInput): Promise<void> {
     console.log(`[desktop] input ${input.inputId} kind=${input.type}`);
+    if (sessionId !== session.sessionId) {
+      relay.send({
+        kind: "client_event",
+        sessionId,
+        event: {
+          type: "delivery_state",
+          payload: {
+            inputId: input.inputId,
+            status: "failed",
+            detail: "Desktop session is no longer attached.",
+            updatedAt: new Date().toISOString()
+          }
+        }
+      });
+      return;
+    }
+
     const receipt = await adapter.sendInput(sessionId, input);
     relay.send({
       kind: "client_event",
@@ -149,4 +203,49 @@ function parseOptionalIndex(value: string | undefined): number | undefined {
   if (typeof value !== "string") return undefined;
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+async function loadOrCreatePairing(options: CliOptions, store: DesktopPairingStore): Promise<ActivePairing> {
+  const stored = await store.load(options.serverUrl);
+  if (stored) return activePairingFromStored(stored);
+  return createAndSavePairing(options, store);
+}
+
+async function createAndSavePairing(options: CliOptions, store: DesktopPairingStore): Promise<ActivePairing> {
+  const pairing = await createPairing(options.serverUrl, options.relayToken);
+  await store.save(options.serverUrl, pairing);
+  return {
+    ...pairing,
+    reused: false
+  };
+}
+
+function activePairingFromStored(stored: StoredDesktopPairing): ActivePairing {
+  return {
+    pairId: stored.pairId,
+    desktopToken: stored.desktopToken,
+    pairingCode: stored.pairingCode ?? "",
+    expiresAt: stored.expiresAt ?? "",
+    lastServerSeq: stored.lastServerSeq,
+    reused: true
+  };
+}
+
+function logPairing(pairing: ActivePairing): void {
+  if (!pairing.reused) {
+    console.log(`[desktop] pairing code: ${pairing.pairingCode}`);
+    console.log("[desktop] open the mobile client and claim this code before it expires.");
+    return;
+  }
+
+  console.log(`[desktop] using saved pairing pairId=${pairing.pairId}`);
+  if (pairing.pairingCode && !isExpired(pairing.expiresAt)) {
+    console.log(`[desktop] saved pairing code, if not claimed yet: ${pairing.pairingCode}`);
+  }
+  console.log("[desktop] mobile clients with saved credentials can reconnect without claiming a new code.");
+}
+
+function isExpired(expiresAt: string): boolean {
+  const expiresAtMs = Date.parse(expiresAt);
+  return Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now();
 }

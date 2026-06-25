@@ -4,7 +4,7 @@ import { test } from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
 import { RelayE2eeSession, type SerializedRelayE2eeSession } from "@easycode/e2ee";
 import type { RelayEnvelope, RelayPayload } from "@easycode/protocol";
-import { DesktopRelayClient, type RelayE2eeSessionStore } from "./relay-client.js";
+import { DesktopRelayClient, RelayAuthenticationError, type RelayE2eeSessionStore } from "./relay-client.js";
 
 test("retries unacknowledged envelopes with the same id after reconnect", async () => {
   const received: RelayEnvelope[] = [];
@@ -45,6 +45,53 @@ test("does not retry acknowledged envelopes after reconnect", async () => {
     await sleep(80);
 
     assert.equal(received.length, 1);
+  } finally {
+    client.close();
+    await harness.close();
+  }
+});
+
+test("reconnects with the latest server sequence cursor", async () => {
+  const upgradeUrls: string[] = [];
+  const observedSeqs: number[] = [];
+  let sentCursorEnvelope = false;
+  const harness = await createHarness((socket, envelope) => {
+    if (envelope.payload.kind === "ping") socket.close(4000, "reconnect with cursor");
+  }, {
+    onUpgrade: (url) => {
+      upgradeUrls.push(url);
+    },
+    onConnection: (socket) => {
+      if (sentCursorEnvelope) return;
+      sentCursorEnvelope = true;
+      socket.send(JSON.stringify({
+        id: "env_mobile_cursor",
+        pairId: "pair_test",
+        serverSeq: 12,
+        source: "mobile",
+        createdAt: new Date().toISOString(),
+        payload: {
+          kind: "ping",
+          nonce: "cursor"
+        }
+      }));
+    }
+  });
+  const client = createTestClient(harness.serverUrl, {
+    afterSeq: 5,
+    onServerSeq: (serverSeq) => {
+      observedSeqs.push(serverSeq);
+    }
+  });
+
+  try {
+    await client.connect();
+    client.send({ kind: "ping", nonce: "force-reconnect" });
+    await waitFor(() => upgradeUrls.length >= 2, "reconnect with updated afterSeq");
+
+    assert.match(upgradeUrls[0] ?? "", /afterSeq=5/);
+    assert.match(upgradeUrls[1] ?? "", /afterSeq=12/);
+    assert.deepEqual(observedSeqs, [12]);
   } finally {
     client.close();
     await harness.close();
@@ -189,11 +236,35 @@ test("e2ee mode restores desktop session state before sending business payloads"
   }
 });
 
+test("reports invalid pairing when relay rejects desktop socket authentication", async () => {
+  const harness = await createRejectingHarness(401);
+  let invalidPairId = "";
+  const client = createTestClient(harness.serverUrl, {
+    onPairingInvalid: (pairId) => {
+      invalidPairId = pairId;
+    }
+  });
+
+  try {
+    await assert.rejects(
+      () => client.connect(),
+      (error) => error instanceof RelayAuthenticationError && error.statusCode === 401
+    );
+    assert.equal(invalidPairId, "pair_test");
+  } finally {
+    client.close();
+    await harness.close();
+  }
+});
+
 const createTestClient = (
   serverUrl: string,
   options: {
+    afterSeq?: number;
     e2ee?: boolean;
     e2eeStore?: RelayE2eeSessionStore;
+    onServerSeq?: (serverSeq: number, envelope: RelayEnvelope) => void | Promise<void>;
+    onPairingInvalid?: (pairId: string) => void | Promise<void>;
     onEnvelope?: (envelope: RelayEnvelope) => void | Promise<void>;
   } = {}
 ): DesktopRelayClient =>
@@ -203,8 +274,11 @@ const createTestClient = (
     desktopToken: "token_test",
     reconnectBaseMs: 10,
     reconnectMaxMs: 20,
+    afterSeq: options.afterSeq,
     e2ee: options.e2ee,
     e2eeStore: options.e2eeStore,
+    onServerSeq: options.onServerSeq,
+    onPairingInvalid: options.onPairingInvalid,
     onEnvelope: options.onEnvelope ?? (() => undefined)
   });
 
@@ -221,7 +295,13 @@ const memoryE2eeStore = (initial?: SerializedRelayE2eeSession): RelayE2eeSession
   };
 };
 
-async function createHarness(onEnvelope: (socket: WebSocket, envelope: RelayEnvelope) => void | Promise<void>): Promise<{
+async function createHarness(
+  onEnvelope: (socket: WebSocket, envelope: RelayEnvelope) => void | Promise<void>,
+  options: {
+    onUpgrade?: (url: string) => void;
+    onConnection?: (socket: WebSocket) => void;
+  } = {}
+): Promise<{
   serverUrl: string;
   close: () => Promise<void>;
 }> {
@@ -229,12 +309,14 @@ async function createHarness(onEnvelope: (socket: WebSocket, envelope: RelayEnve
   const wss = new WebSocketServer({ noServer: true });
 
   httpServer.on("upgrade", (request, socket, head) => {
+    options.onUpgrade?.(request.url ?? "");
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit("connection", ws, request);
     });
   });
 
   wss.on("connection", (socket) => {
+    options.onConnection?.(socket);
     socket.on("message", (raw) => {
       Promise.resolve(onEnvelope(socket, JSON.parse(raw.toString()) as RelayEnvelope)).catch((error) => {
         socket.emit("error", error);
@@ -251,6 +333,28 @@ async function createHarness(onEnvelope: (socket: WebSocket, envelope: RelayEnve
     close: async () => {
       for (const client of wss.clients) client.close();
       await closeWebSocketServer(wss);
+      await closeHttpServer(httpServer);
+    }
+  };
+}
+
+async function createRejectingHarness(statusCode: number): Promise<{
+  serverUrl: string;
+  close: () => Promise<void>;
+}> {
+  const httpServer = createServer();
+  httpServer.on("upgrade", (_request, socket) => {
+    socket.write(`HTTP/1.1 ${statusCode} Unauthorized\r\n\r\n`);
+    socket.destroy();
+  });
+
+  await listen(httpServer);
+  const address = httpServer.address();
+  if (typeof address !== "object" || !address) throw new Error("Rejecting harness server did not bind to a port");
+
+  return {
+    serverUrl: `http://127.0.0.1:${address.port}`,
+    close: async () => {
       await closeHttpServer(httpServer);
     }
   };

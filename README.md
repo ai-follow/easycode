@@ -86,6 +86,10 @@ Open the Vite URL on desktop or Android, enter `http://localhost:8787`, then
 claim the one-time pairing code shown by the desktop agent.
 After the first successful claim, the mobile web client stores the pairing
 credentials locally and will reconnect automatically.
+The desktop agent also stores its pairing credentials in `.easycode/pairing.json`
+by default, so restarting the agent does not require claiming a new code. Use
+`EASYCODE_PAIRING_STATE_FILE` or `--pairing-state-file` to override the file,
+and `--reset-pairing` to discard the saved desktop pairing and create a new one.
 Like the desktop agent, the mobile web client keeps in-memory outbound
 envelopes with stable ids until the relay returns a transport `ack`.
 Use `Forget pairing` in the mobile web client to clear local credentials and
@@ -166,8 +170,8 @@ EASYCODE_REDIS_TEST_URL=redis://localhost:6379 pnpm --filter @easycode/relay-ser
 - The relay server has initial PostgreSQL persistence and Redis fanout support,
   but hosted deployment still needs Redis operational hardening and multi-node
   soak testing.
-- E2EE state is currently stored in browser local storage and local desktop
-  files, not platform secure storage.
+- Pairing and E2EE state are currently stored in browser local storage and
+  local desktop files, not platform secure storage.
 - The memory store is suitable for local validation. PostgreSQL persists
   envelope replay data; Redis fanout handles live delivery across relay nodes.
 - Real desktop-client extraction is heuristic. The macOS adapter reads the

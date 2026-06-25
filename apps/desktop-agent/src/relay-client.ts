@@ -23,8 +23,11 @@ type RelayClientOptions = {
   reconnectBaseMs?: number;
   reconnectMaxMs?: number;
   sendQueueLimit?: number;
+  afterSeq?: number;
   e2ee?: boolean;
   e2eeStore?: RelayE2eeSessionStore;
+  onServerSeq?: (serverSeq: number, envelope: RelayEnvelope) => void | Promise<void>;
+  onPairingInvalid?: (pairId: string) => void | Promise<void>;
 };
 
 export type RelayE2eeSessionStore = {
@@ -32,6 +35,13 @@ export type RelayE2eeSessionStore = {
   save(pairId: string, session: SerializedRelayE2eeSession): Promise<void>;
   delete?(pairId: string): Promise<void>;
 };
+
+export class RelayAuthenticationError extends Error {
+  constructor(readonly statusCode: number) {
+    super(`Relay rejected desktop socket authentication: ${statusCode}`);
+    this.name = "RelayAuthenticationError";
+  }
+}
 
 export class DesktopRelayClient {
   private readonly serverUrl: string;
@@ -42,6 +52,8 @@ export class DesktopRelayClient {
   private readonly reconnectMaxMs: number;
   private readonly sendQueueLimit: number;
   private readonly e2eeStore?: RelayE2eeSessionStore;
+  private readonly onServerSeq?: (serverSeq: number, envelope: RelayEnvelope) => void | Promise<void>;
+  private readonly onPairingInvalid?: (pairId: string) => void | Promise<void>;
   private readonly e2eeSession?: Promise<RelayE2eeSession>;
   private ws?: WebSocket;
   private closed = false;
@@ -51,6 +63,7 @@ export class DesktopRelayClient {
   private readonly sendQueue: RelayEnvelope[] = [];
   private readonly pendingClearPayloads: RelayPayload[] = [];
   private readonly pendingAcks = new Map<string, RelayEnvelope>();
+  private lastServerSeq?: number;
 
   constructor(options: RelayClientOptions) {
     this.serverUrl = options.serverUrl;
@@ -60,7 +73,10 @@ export class DesktopRelayClient {
     this.reconnectBaseMs = positiveIntOrDefault(options.reconnectBaseMs, RECONNECT_BASE_MS);
     this.reconnectMaxMs = positiveIntOrDefault(options.reconnectMaxMs, RECONNECT_MAX_MS);
     this.sendQueueLimit = positiveIntOrDefault(options.sendQueueLimit, SEND_QUEUE_LIMIT);
+    this.lastServerSeq = positiveIntOrUndefined(options.afterSeq);
     this.e2eeStore = options.e2eeStore;
+    this.onServerSeq = options.onServerSeq;
+    this.onPairingInvalid = options.onPairingInvalid;
     this.e2eeSession = options.e2ee
       ? this.createOrRestoreE2eeSession()
       : undefined;
@@ -91,6 +107,7 @@ export class DesktopRelayClient {
     wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
     wsUrl.searchParams.set("pairId", this.pairId);
     wsUrl.searchParams.set("role", "desktop");
+    if (typeof this.lastServerSeq === "number") wsUrl.searchParams.set("afterSeq", String(this.lastServerSeq));
 
     const ws = new WebSocket(wsUrl, {
       headers: {
@@ -114,7 +131,7 @@ export class DesktopRelayClient {
       ws.once("unexpected-response", (_request, response) => {
         if (response.statusCode === 401 || response.statusCode === 403) {
           this.stopReconnect();
-          reject(new Error(`Relay rejected desktop socket authentication: ${response.statusCode}`));
+          reject(new RelayAuthenticationError(response.statusCode));
           return;
         }
 
@@ -131,6 +148,7 @@ export class DesktopRelayClient {
         console.error(`[desktop] ignored invalid relay envelope: ${parsed.error.message}`);
         return;
       }
+      await this.rememberServerSeq(parsed.data);
       if (parsed.data.payload.kind === "ack") {
         this.pendingAcks.delete(parsed.data.payload.refId);
         return;
@@ -211,6 +229,13 @@ export class DesktopRelayClient {
       ...envelope,
       payload: await e2ee.decryptEnvelopePayload(envelope)
     });
+  }
+
+  private async rememberServerSeq(envelope: RelayEnvelope): Promise<void> {
+    if (typeof envelope.serverSeq !== "number") return;
+    if (typeof this.lastServerSeq === "number" && envelope.serverSeq <= this.lastServerSeq) return;
+    this.lastServerSeq = envelope.serverSeq;
+    await Promise.resolve(this.onServerSeq?.(envelope.serverSeq, envelope));
   }
 
   private async flushPendingClearPayloads(): Promise<void> {
@@ -324,6 +349,9 @@ export class DesktopRelayClient {
     void this.e2eeStore?.delete?.(this.pairId).catch((error) => {
       console.error(`[desktop] failed to delete e2ee state for pair ${this.pairId}: ${error instanceof Error ? error.message : String(error)}`);
     });
+    void Promise.resolve(this.onPairingInvalid?.(this.pairId)).catch((error: unknown) => {
+      console.error(`[desktop] failed to delete pairing state for pair ${this.pairId}: ${error instanceof Error ? error.message : String(error)}`);
+    });
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
   }
@@ -365,3 +393,6 @@ const safeJson = (raw: string): unknown => {
 
 const positiveIntOrDefault = (value: number | undefined, fallback: number): number =>
   Number.isInteger(value) && typeof value === "number" && value > 0 ? value : fallback;
+
+const positiveIntOrUndefined = (value: number | undefined): number | undefined =>
+  Number.isInteger(value) && typeof value === "number" && value > 0 ? value : undefined;
