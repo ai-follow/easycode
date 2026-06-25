@@ -36,6 +36,21 @@ Adapters report capabilities instead of hiding gaps. For example, a macOS
 automation adapter may support `sendMode: "clipboard-paste"` before it supports
 structured reading.
 
+## macOS accessibility adapter
+
+The first real-client path uses macOS Accessibility instead of private client
+storage. The adapter discovers windows with System Events, dumps the selected
+window's accessibility tree, converts useful visible text into `message` events,
+and converts client-exposed decision buttons into `interaction_request` events.
+
+This keeps the relay semantics intact: EasyCode does not decide what an approval
+means. It forwards option labels and values exposed by the target client, and it
+clicks the matching accessible button when the mobile user selects one.
+
+Cursor should be the first real-client validation target. After Cursor is stable,
+the same adapter can be tuned for Codex and Claude by adjusting process names,
+filtering rules, and client-specific selectors.
+
 ## Relay semantics
 
 The server treats payloads as opaque protocol messages. It may validate envelope
@@ -47,6 +62,6 @@ client-specific option labels such as approve, reject, continue, or stop.
 - Replace in-memory relay store with PostgreSQL and Redis implementations.
 - Add end-to-end encryption for envelope payloads after the pairing handshake.
 - Add Tauri shell that embeds the desktop agent core and permissions UI.
-- Implement real Cursor conversation extraction through accessibility tree
-  inspection and resilient UI selectors.
+- Harden Cursor conversation extraction with resilient selectors and fixtures
+  captured from real Cursor accessibility trees.
 - Add native Flutter Android build once the Flutter SDK is installed.

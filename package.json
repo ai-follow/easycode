@@ -10,7 +10,7 @@
     "dev:desktop": "pnpm --filter @easycode/desktop-agent dev",
     "dev:mobile": "pnpm --filter @easycode/mobile-web dev",
     "typecheck": "pnpm --filter @easycode/protocol build && pnpm -r typecheck",
-    "test": "pnpm -r test",
+    "test": "pnpm --filter @easycode/protocol build && pnpm -r test",
     "lint": "pnpm -r lint"
   },
   "devDependencies": {

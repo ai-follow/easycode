@@ -10,7 +10,9 @@ device and relays user input back to the selected desktop client.
 - Shared protocol package with typed relay envelopes and client adapter models.
 - WebSocket relay server with an in-memory pairing flow.
 - Desktop agent core with a complete mock adapter for end-to-end validation.
-- macOS window/input adapter foundations for Cursor, Codex, and Claude clients.
+- macOS accessibility adapter foundations for Cursor, Codex, and Claude clients:
+  window discovery, visible text snapshots, interaction option extraction, and
+  clipboard-based input delivery.
 - Mobile-first web/PWA client for Android browser validation.
 - Flutter source skeleton that uses the same protocol shape once Flutter is
   available on the machine.
@@ -53,9 +55,29 @@ docs/architecture.md     Architecture notes and extension points
 
 - The relay server uses in-memory storage. PostgreSQL and Redis adapters should
   replace it before a hosted deployment.
-- Full visual conversation extraction from real desktop clients is not yet
-  implemented. The mock adapter covers the complete protocol; real macOS
-  adapters currently cover window discovery and input delivery.
+- Real desktop-client extraction is heuristic. The macOS adapter reads the
+  Accessibility tree and works best when the target client exposes chat text and
+  buttons through native accessibility nodes. Cursor should be validated first.
 - Rust/Tauri and Flutter toolchains were not installed on this machine, so the
   runnable desktop implementation is a TypeScript agent core that can later be
   wrapped by Tauri.
+
+## Real macOS client validation
+
+macOS must grant Accessibility permission to the terminal app running the
+desktop agent. Then start one of the real adapters:
+
+```bash
+pnpm dev:desktop -- --adapter cursor --server http://localhost:8787
+```
+
+Available adapter names are `cursor`, `codex`, `claude-code`, and `mock`.
+The polling interval defaults to 2500 ms and can be changed with:
+
+```bash
+EASYCODE_ACCESSIBILITY_POLL_MS=1000 pnpm dev:desktop -- --adapter cursor
+```
+
+The adapter does not interpret approval risk. If a client exposes options such
+as approve, reject, stop, or continue as accessible buttons, EasyCode relays
+them to mobile as client-provided interaction options.
