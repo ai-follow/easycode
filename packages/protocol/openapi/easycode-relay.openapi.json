@@ -1,0 +1,2756 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "EasyCode Relay API",
+    "version": "0.1.0",
+    "description": "HTTP and WebSocket upgrade contract for the EasyCode relay."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8787",
+      "description": "Local development relay"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Return relay health and runtime metadata.",
+        "responses": {
+          "200": {
+            "description": "Relay health",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "getReadiness",
+        "summary": "Return readiness for deployment probes.",
+        "responses": {
+          "200": {
+            "description": "Relay is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Relay is not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/pairings": {
+      "post": {
+        "operationId": "createPairing",
+        "summary": "Create a desktop pairing and one-time mobile claim code.",
+        "description": "Requires the admin bearer token or x-easycode-relay-token header when the relay is configured with EASYCODE_RELAY_ADMIN_TOKEN.",
+        "security": [
+          {
+            "AdminBearer": []
+          },
+          {
+            "AdminTokenHeader": []
+          },
+          {}
+        ],
+        "responses": {
+          "201": {
+            "description": "Pairing created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatePairingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/pairings/{pairId}": {
+      "delete": {
+        "operationId": "revokePairing",
+        "summary": "Revoke an active pairing with either device pair token.",
+        "security": [
+          {
+            "PairTokenBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "pairId",
+            "in": "path",
+            "required": true,
+            "description": "Pair id returned by createPairing or claimPairing.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Pairing revoked"
+          },
+          "401": {
+            "description": "Missing or invalid pair token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/pairings/{pairingCode}/claim": {
+      "post": {
+        "operationId": "claimPairing",
+        "summary": "Claim a one-time pairing code from a mobile client.",
+        "parameters": [
+          {
+            "name": "pairingCode",
+            "in": "path",
+            "required": true,
+            "description": "Six-digit one-time pairing code displayed by the desktop agent.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{6}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pairing claimed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimPairingResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pairing code not found, expired, already claimed, or revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ws": {
+      "get": {
+        "operationId": "connectRelayWebSocket",
+        "summary": "Upgrade to the relay WebSocket for a paired desktop or mobile device.",
+        "description": "Desktop clients should send the pair token as a bearer token or x-easycode-relay-token header. Browser mobile clients send the mobile token in the token query parameter because browser WebSocket APIs cannot set custom headers.",
+        "security": [
+          {
+            "PairTokenBearer": []
+          },
+          {
+            "PairTokenHeader": []
+          },
+          {
+            "MobileTokenQuery": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "pairId",
+            "in": "query",
+            "required": true,
+            "description": "Pair id to connect.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": true,
+            "description": "Device role for this socket.",
+            "schema": {
+              "$ref": "#/components/schemas/DeviceRole"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": false,
+            "description": "Mobile pair token for browser WebSocket clients.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "afterSeq",
+            "in": "query",
+            "required": false,
+            "description": "Optional positive server sequence cursor for replay recovery.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "WebSocket upgrade accepted. Messages are JSON RelayEnvelope objects."
+          },
+          "401": {
+            "description": "Missing or invalid pair token"
+          },
+          "403": {
+            "description": "Origin not allowed"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "AdminBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Admin token for pairing creation when configured."
+      },
+      "AdminTokenHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-easycode-relay-token",
+        "description": "Admin token header alternative for pairing creation."
+      },
+      "PairTokenBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Desktop or mobile pair token."
+      },
+      "PairTokenHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-easycode-relay-token",
+        "description": "Pair token header alternative for non-browser clients."
+      },
+      "MobileTokenQuery": {
+        "type": "apiKey",
+        "in": "query",
+        "name": "token",
+        "description": "Mobile pair token for browser WebSocket clients."
+      }
+    },
+    "schemas": {
+      "ClientAdapterId": {
+        "type": "string",
+        "enum": [
+          "codex",
+          "claude-code",
+          "cursor"
+        ]
+      },
+      "DeviceRole": {
+        "type": "string",
+        "enum": [
+          "desktop",
+          "mobile"
+        ]
+      },
+      "RelaySource": {
+        "type": "string",
+        "enum": [
+          "desktop",
+          "mobile",
+          "server"
+        ]
+      },
+      "AdapterCapability": {
+        "type": "object",
+        "properties": {
+          "readMode": {
+            "type": "string",
+            "enum": [
+              "structured",
+              "accessibility",
+              "ocr",
+              "none"
+            ]
+          },
+          "sendMode": {
+            "type": "string",
+            "enum": [
+              "official-api",
+              "accessibility",
+              "clipboard-paste",
+              "none"
+            ]
+          },
+          "interactionMode": {
+            "type": "string",
+            "enum": [
+              "official-api",
+              "accessibility",
+              "none"
+            ]
+          }
+        },
+        "required": [
+          "readMode",
+          "sendMode",
+          "interactionMode"
+        ],
+        "additionalProperties": false
+      },
+      "ClientTarget": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "adapterId": {
+            "type": "string",
+            "enum": [
+              "codex",
+              "claude-code",
+              "cursor"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "appName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "macos",
+              "windows",
+              "linux",
+              "mock"
+            ]
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "id",
+          "adapterId",
+          "title",
+          "appName",
+          "platform"
+        ],
+        "additionalProperties": false
+      },
+      "AttachedSession": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targetId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "adapterId": {
+            "type": "string",
+            "enum": [
+              "codex",
+              "claude-code",
+              "cursor"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "attachedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "sessionId",
+          "targetId",
+          "adapterId",
+          "title",
+          "attachedAt"
+        ],
+        "additionalProperties": false
+      },
+      "ClientMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant",
+              "system",
+              "tool",
+              "client"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "raw": {}
+        },
+        "required": [
+          "id",
+          "role",
+          "text",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "InteractionRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {}
+              },
+              "required": [
+                "id",
+                "label"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "raw": {}
+        },
+        "required": [
+          "id",
+          "text",
+          "options"
+        ],
+        "additionalProperties": false
+      },
+      "SessionState": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "discovering",
+              "attached",
+              "idle",
+              "streaming",
+              "waiting_for_user",
+              "error",
+              "closed"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "status",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "DeliveryState": {
+        "type": "object",
+        "properties": {
+          "inputId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "delivered",
+              "failed"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "inputId",
+          "status",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "DeliveryReceipt": {
+        "type": "object",
+        "properties": {
+          "inputId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "delivered",
+              "failed"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "deliveredAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "inputId",
+          "status",
+          "deliveredAt"
+        ],
+        "additionalProperties": false
+      },
+      "UserInput": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "text"
+              },
+              "inputId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "inputId",
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "interaction_response"
+              },
+              "inputId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "requestId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "optionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {}
+            },
+            "required": [
+              "type",
+              "inputId",
+              "requestId",
+              "optionId"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "ClientEvent": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "message"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "assistant",
+                      "system",
+                      "tool",
+                      "client"
+                    ]
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "raw": {}
+                },
+                "required": [
+                  "id",
+                  "role",
+                  "text",
+                  "createdAt"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "interaction_request"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {}
+                      },
+                      "required": [
+                        "id",
+                        "label"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "raw": {}
+                },
+                "required": [
+                  "id",
+                  "text",
+                  "options"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "session_state"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "discovering",
+                      "attached",
+                      "idle",
+                      "streaming",
+                      "waiting_for_user",
+                      "error",
+                      "closed"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "status",
+                  "updatedAt"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "delivery_state"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "inputId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "queued",
+                      "delivered",
+                      "failed"
+                    ]
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "inputId",
+                  "status",
+                  "updatedAt"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "ConversationSnapshot": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "adapterId": {
+            "type": "string",
+            "enum": [
+              "codex",
+              "claude-code",
+              "cursor"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant",
+                    "system",
+                    "tool",
+                    "client"
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "raw": {}
+              },
+              "required": [
+                "id",
+                "role",
+                "text",
+                "createdAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "pendingInteractions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "text": {
+                  "type": "string"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "value": {}
+                    },
+                    "required": [
+                      "id",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "raw": {}
+              },
+              "required": [
+                "id",
+                "text",
+                "options"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "state": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "discovering",
+                  "attached",
+                  "idle",
+                  "streaming",
+                  "waiting_for_user",
+                  "error",
+                  "closed"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "status",
+              "updatedAt"
+            ],
+            "additionalProperties": false
+          },
+          "capturedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "sessionId",
+          "adapterId",
+          "title",
+          "messages",
+          "pendingInteractions",
+          "state",
+          "capturedAt"
+        ],
+        "additionalProperties": false
+      },
+      "EncryptedRelayPayload": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "encrypted_payload"
+          },
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "suite": {
+            "type": "string",
+            "enum": [
+              "xchacha20poly1305-ietf",
+              "aes-256-gcm"
+            ]
+          },
+          "keyId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nonce": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ciphertext": {
+            "type": "string",
+            "minLength": 1
+          },
+          "aad": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "kind",
+          "version",
+          "suite",
+          "keyId",
+          "nonce",
+          "ciphertext"
+        ],
+        "additionalProperties": false
+      },
+      "KeyExchangePayload": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "key_exchange"
+          },
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "suite": {
+            "type": "string",
+            "const": "p256-hkdf-sha256-aes-256-gcm"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "desktop_hello",
+              "mobile_hello"
+            ]
+          },
+          "keyId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "publicKey": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "kind",
+          "version",
+          "suite",
+          "phase",
+          "keyId",
+          "publicKey"
+        ],
+        "additionalProperties": false
+      },
+      "RelayPayload": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "desktop_status"
+              },
+              "targets": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "adapterId": {
+                      "type": "string",
+                      "enum": [
+                        "codex",
+                        "claude-code",
+                        "cursor"
+                      ]
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "appName": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "platform": {
+                      "type": "string",
+                      "enum": [
+                        "macos",
+                        "windows",
+                        "linux",
+                        "mock"
+                      ]
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "adapterId",
+                    "title",
+                    "appName",
+                    "platform"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "sessions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "targetId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "adapterId": {
+                      "type": "string",
+                      "enum": [
+                        "codex",
+                        "claude-code",
+                        "cursor"
+                      ]
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "attachedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "sessionId",
+                    "targetId",
+                    "adapterId",
+                    "title",
+                    "attachedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "capabilities": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "readMode": {
+                      "type": "string",
+                      "enum": [
+                        "structured",
+                        "accessibility",
+                        "ocr",
+                        "none"
+                      ]
+                    },
+                    "sendMode": {
+                      "type": "string",
+                      "enum": [
+                        "official-api",
+                        "accessibility",
+                        "clipboard-paste",
+                        "none"
+                      ]
+                    },
+                    "interactionMode": {
+                      "type": "string",
+                      "enum": [
+                        "official-api",
+                        "accessibility",
+                        "none"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "readMode",
+                    "sendMode",
+                    "interactionMode"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "targets",
+              "sessions",
+              "capabilities"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "session_snapshot"
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "snapshot": {
+                "type": "object",
+                "properties": {
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "adapterId": {
+                    "type": "string",
+                    "enum": [
+                      "codex",
+                      "claude-code",
+                      "cursor"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "messages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "assistant",
+                            "system",
+                            "tool",
+                            "client"
+                          ]
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "raw": {}
+                      },
+                      "required": [
+                        "id",
+                        "role",
+                        "text",
+                        "createdAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "pendingInteractions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "label": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "value": {}
+                            },
+                            "required": [
+                              "id",
+                              "label"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "raw": {}
+                      },
+                      "required": [
+                        "id",
+                        "text",
+                        "options"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "state": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "discovering",
+                          "attached",
+                          "idle",
+                          "streaming",
+                          "waiting_for_user",
+                          "error",
+                          "closed"
+                        ]
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "detail": {
+                        "type": "string"
+                      },
+                      "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "updatedAt"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "capturedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "sessionId",
+                  "adapterId",
+                  "title",
+                  "messages",
+                  "pendingInteractions",
+                  "state",
+                  "capturedAt"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "kind",
+              "sessionId",
+              "snapshot"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "client_event"
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "event": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "message"
+                      },
+                      "payload": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "user",
+                              "assistant",
+                              "system",
+                              "tool",
+                              "client"
+                            ]
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "raw": {}
+                        },
+                        "required": [
+                          "id",
+                          "role",
+                          "text",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "payload"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "interaction_request"
+                      },
+                      "payload": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {}
+                              },
+                              "required": [
+                                "id",
+                                "label"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "raw": {}
+                        },
+                        "required": [
+                          "id",
+                          "text",
+                          "options"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "payload"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "session_state"
+                      },
+                      "payload": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "discovering",
+                              "attached",
+                              "idle",
+                              "streaming",
+                              "waiting_for_user",
+                              "error",
+                              "closed"
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "status",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "payload"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "delivery_state"
+                      },
+                      "payload": {
+                        "type": "object",
+                        "properties": {
+                          "inputId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "delivered",
+                              "failed"
+                            ]
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "inputId",
+                          "status",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "payload"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "sessionId",
+              "event"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "user_input"
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "input": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "text"
+                      },
+                      "inputId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "inputId",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "interaction_response"
+                      },
+                      "inputId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "requestId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "optionId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "value": {}
+                    },
+                    "required": [
+                      "type",
+                      "inputId",
+                      "requestId",
+                      "optionId"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "sessionId",
+              "input"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "ack"
+              },
+              "refId": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "kind",
+              "refId"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "error"
+              },
+              "message": {
+                "type": "string"
+              },
+              "refId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "message"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "ping"
+              },
+              "nonce": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "kind",
+              "nonce"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "key_exchange"
+              },
+              "version": {
+                "type": "number",
+                "const": 1
+              },
+              "suite": {
+                "type": "string",
+                "const": "p256-hkdf-sha256-aes-256-gcm"
+              },
+              "phase": {
+                "type": "string",
+                "enum": [
+                  "desktop_hello",
+                  "mobile_hello"
+                ]
+              },
+              "keyId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "publicKey": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "kind",
+              "version",
+              "suite",
+              "phase",
+              "keyId",
+              "publicKey"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "encrypted_payload"
+              },
+              "version": {
+                "type": "number",
+                "const": 1
+              },
+              "suite": {
+                "type": "string",
+                "enum": [
+                  "xchacha20poly1305-ietf",
+                  "aes-256-gcm"
+                ]
+              },
+              "keyId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "nonce": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ciphertext": {
+                "type": "string",
+                "minLength": 1
+              },
+              "aad": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "kind",
+              "version",
+              "suite",
+              "keyId",
+              "nonce",
+              "ciphertext"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "RelayEnvelope": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pairId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "serverSeq": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "desktop",
+              "mobile",
+              "server"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "desktop_status"
+                  },
+                  "targets": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "adapterId": {
+                          "type": "string",
+                          "enum": [
+                            "codex",
+                            "claude-code",
+                            "cursor"
+                          ]
+                        },
+                        "title": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "appName": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "platform": {
+                          "type": "string",
+                          "enum": [
+                            "macos",
+                            "windows",
+                            "linux",
+                            "mock"
+                          ]
+                        },
+                        "metadata": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "adapterId",
+                        "title",
+                        "appName",
+                        "platform"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "sessions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "sessionId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "targetId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "adapterId": {
+                          "type": "string",
+                          "enum": [
+                            "codex",
+                            "claude-code",
+                            "cursor"
+                          ]
+                        },
+                        "title": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "attachedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "sessionId",
+                        "targetId",
+                        "adapterId",
+                        "title",
+                        "attachedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "capabilities": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "readMode": {
+                          "type": "string",
+                          "enum": [
+                            "structured",
+                            "accessibility",
+                            "ocr",
+                            "none"
+                          ]
+                        },
+                        "sendMode": {
+                          "type": "string",
+                          "enum": [
+                            "official-api",
+                            "accessibility",
+                            "clipboard-paste",
+                            "none"
+                          ]
+                        },
+                        "interactionMode": {
+                          "type": "string",
+                          "enum": [
+                            "official-api",
+                            "accessibility",
+                            "none"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "readMode",
+                        "sendMode",
+                        "interactionMode"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "kind",
+                  "targets",
+                  "sessions",
+                  "capabilities"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "session_snapshot"
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "snapshot": {
+                    "type": "object",
+                    "properties": {
+                      "sessionId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "adapterId": {
+                        "type": "string",
+                        "enum": [
+                          "codex",
+                          "claude-code",
+                          "cursor"
+                        ]
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "messages": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "role": {
+                              "type": "string",
+                              "enum": [
+                                "user",
+                                "assistant",
+                                "system",
+                                "tool",
+                                "client"
+                              ]
+                            },
+                            "text": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "raw": {}
+                          },
+                          "required": [
+                            "id",
+                            "role",
+                            "text",
+                            "createdAt"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "pendingInteractions": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "text": {
+                              "type": "string"
+                            },
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "label": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "value": {}
+                                },
+                                "required": [
+                                  "id",
+                                  "label"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "raw": {}
+                          },
+                          "required": [
+                            "id",
+                            "text",
+                            "options"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "state": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "discovering",
+                              "attached",
+                              "idle",
+                              "streaming",
+                              "waiting_for_user",
+                              "error",
+                              "closed"
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "status",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "capturedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    },
+                    "required": [
+                      "sessionId",
+                      "adapterId",
+                      "title",
+                      "messages",
+                      "pendingInteractions",
+                      "state",
+                      "capturedAt"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "kind",
+                  "sessionId",
+                  "snapshot"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "client_event"
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "event": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "message"
+                          },
+                          "payload": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "role": {
+                                "type": "string",
+                                "enum": [
+                                  "user",
+                                  "assistant",
+                                  "system",
+                                  "tool",
+                                  "client"
+                                ]
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "raw": {}
+                            },
+                            "required": [
+                              "id",
+                              "role",
+                              "text",
+                              "createdAt"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "payload"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "interaction_request"
+                          },
+                          "payload": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "options": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "label": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "value": {}
+                                  },
+                                  "required": [
+                                    "id",
+                                    "label"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "raw": {}
+                            },
+                            "required": [
+                              "id",
+                              "text",
+                              "options"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "payload"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "session_state"
+                          },
+                          "payload": {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "discovering",
+                                  "attached",
+                                  "idle",
+                                  "streaming",
+                                  "waiting_for_user",
+                                  "error",
+                                  "closed"
+                                ]
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "detail": {
+                                "type": "string"
+                              },
+                              "updatedAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "updatedAt"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "payload"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "delivery_state"
+                          },
+                          "payload": {
+                            "type": "object",
+                            "properties": {
+                              "inputId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "queued",
+                                  "delivered",
+                                  "failed"
+                                ]
+                              },
+                              "detail": {
+                                "type": "string"
+                              },
+                              "updatedAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              }
+                            },
+                            "required": [
+                              "inputId",
+                              "status",
+                              "updatedAt"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "payload"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "sessionId",
+                  "event"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "user_input"
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "input": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "text"
+                          },
+                          "inputId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "text": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "inputId",
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "interaction_response"
+                          },
+                          "inputId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "requestId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "optionId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "value": {}
+                        },
+                        "required": [
+                          "type",
+                          "inputId",
+                          "requestId",
+                          "optionId"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "sessionId",
+                  "input"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "ack"
+                  },
+                  "refId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "refId"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "error"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "refId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "message"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "ping"
+                  },
+                  "nonce": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "nonce"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "key_exchange"
+                  },
+                  "version": {
+                    "type": "number",
+                    "const": 1
+                  },
+                  "suite": {
+                    "type": "string",
+                    "const": "p256-hkdf-sha256-aes-256-gcm"
+                  },
+                  "phase": {
+                    "type": "string",
+                    "enum": [
+                      "desktop_hello",
+                      "mobile_hello"
+                    ]
+                  },
+                  "keyId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "publicKey": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "version",
+                  "suite",
+                  "phase",
+                  "keyId",
+                  "publicKey"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "encrypted_payload"
+                  },
+                  "version": {
+                    "type": "number",
+                    "const": 1
+                  },
+                  "suite": {
+                    "type": "string",
+                    "enum": [
+                      "xchacha20poly1305-ietf",
+                      "aes-256-gcm"
+                    ]
+                  },
+                  "keyId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "nonce": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "ciphertext": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "aad": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "version",
+                  "suite",
+                  "keyId",
+                  "nonce",
+                  "ciphertext"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "pairId",
+          "source",
+          "createdAt",
+          "payload"
+        ],
+        "additionalProperties": false
+      },
+      "CreatePairingResponse": {
+        "type": "object",
+        "properties": {
+          "pairId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pairingCode": {
+            "type": "string",
+            "minLength": 4
+          },
+          "desktopToken": {
+            "type": "string",
+            "minLength": 16
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "pairId",
+          "pairingCode",
+          "desktopToken",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "ClaimPairingResponse": {
+        "type": "object",
+        "properties": {
+          "pairId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mobileToken": {
+            "type": "string",
+            "minLength": 16
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "pairId",
+          "mobileToken",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "service": {
+            "type": "string",
+            "const": "easycode-relay"
+          },
+          "version": {
+            "type": "string"
+          },
+          "uptimeSeconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "adminTokenConfigured": {
+            "type": "boolean"
+          },
+          "heartbeatIntervalMs": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pairings": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "connections": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "ok",
+          "service",
+          "version",
+          "uptimeSeconds",
+          "startedAt",
+          "adminTokenConfigured",
+          "pairings",
+          "connections"
+        ],
+        "additionalProperties": false
+      },
+      "ReadinessResponse": {
+        "type": "object",
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "checks": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "ready",
+          "checks"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

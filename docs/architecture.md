@@ -18,7 +18,9 @@ that request as data and returns the user's selected response.
 - Protocol Package: defines the only contract shared by all components.
   The TypeScript/Zod source is authoritative; the generated
   `packages/protocol/schemas/easycode-protocol.schema.json` bundle exists for
-  native clients and future Dart/Rust type generation.
+  native clients and future Dart/Rust type generation. The generated
+  `packages/protocol/openapi/easycode-relay.openapi.json` file documents the
+  relay's HTTP pairing endpoints and WebSocket upgrade parameters.
 
 ## Adapter contract
 

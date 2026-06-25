@@ -10,14 +10,17 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./schema": "./schemas/easycode-protocol.schema.json"
+    "./schema": "./schemas/easycode-protocol.schema.json",
+    "./openapi": "./openapi/easycode-relay.openapi.json"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "schema:generate": "pnpm build && node scripts/generate-json-schema.mjs",
     "schema:check": "node scripts/check-json-schema.mjs",
+    "openapi:generate": "pnpm build && node scripts/generate-openapi.mjs",
+    "openapi:check": "node scripts/check-openapi.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "pnpm build && pnpm schema:check && node --test dist/**/*.test.js",
+    "test": "pnpm build && pnpm schema:check && pnpm openapi:check && node --test dist/**/*.test.js",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
