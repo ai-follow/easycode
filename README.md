@@ -14,7 +14,8 @@ device and relays user input back to the selected desktop client.
 - macOS accessibility adapter foundations for Cursor, Codex, and Claude clients:
   window discovery, visible text snapshots, interaction option extraction, and
   clipboard-based input delivery.
-- Mobile-first web/PWA client for Android browser validation.
+- Mobile-first web/PWA client for Android browser validation, with saved pairing
+  credentials, automatic reconnect, and `afterSeq` replay recovery.
 - Flutter source skeleton that uses the same protocol shape once Flutter is
   available on the machine.
 
@@ -40,6 +41,8 @@ pnpm dev:mobile
 
 Open the Vite URL on desktop or Android, enter `http://localhost:8787`, then
 claim the pairing code shown by the desktop agent.
+After the first successful claim, the mobile web client stores the pairing
+credentials locally and will reconnect automatically.
 
 ## Project layout
 
@@ -84,3 +87,10 @@ EASYCODE_ACCESSIBILITY_POLL_MS=1000 pnpm dev:desktop -- --adapter cursor
 The adapter does not interpret approval risk. If a client exposes options such
 as approve, reject, stop, or continue as accessible buttons, EasyCode relays
 them to mobile as client-provided interaction options.
+
+To inspect a real client's accessibility tree without connecting the relay:
+
+```bash
+pnpm --filter @easycode/desktop-agent inspect -- --adapter cursor --json
+pnpm --filter @easycode/desktop-agent inspect -- --adapter cursor --raw --output cursor-accessibility.txt
+```

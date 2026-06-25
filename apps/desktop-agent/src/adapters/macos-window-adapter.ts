@@ -1,5 +1,3 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import type {
   AdapterCapability,
@@ -16,9 +14,14 @@ import {
   buildConversationSnapshotFromAccessibility,
   parseAccessibilityDump
 } from "./macos-accessibility.js";
+import {
+  clickButtonByLabel,
+  discoverProcessWindows,
+  dumpAccessibilityTree,
+  pasteAndSubmitText
+} from "./macos-automation.js";
 import type { ClientAdapter } from "./types.js";
 
-const execFileAsync = promisify(execFile);
 const DEFAULT_POLL_INTERVAL_MS = 2500;
 
 type MacWindowAdapterOptions = {
@@ -55,28 +58,9 @@ export class MacWindowAdapter implements ClientAdapter {
   async discoverClients(): Promise<ClientTarget[]> {
     if (process.platform !== "darwin") return [];
 
-    const script = `
-      tell application "System Events"
-        if not (exists process "${this.processName}") then
-          return ""
-        end if
-        set output to ""
-        tell process "${this.processName}"
-          repeat with w in windows
-            set output to output & (name of w as text) & linefeed
-          end repeat
-        end tell
-        return output
-      end tell
-    `;
+    const windows = await discoverProcessWindows(this.processName);
 
-    const { stdout } = await runOsa(script);
-    const names = stdout
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    if (names.length === 0) {
+    if (windows.length === 0) {
       return [
         {
           id: `${this.id}:process`,
@@ -92,15 +76,15 @@ export class MacWindowAdapter implements ClientAdapter {
       ];
     }
 
-    return names.map((title, index) => ({
-      id: `${this.id}:window:${index}`,
+    return windows.map((window) => ({
+      id: `${this.id}:window:${window.windowIndex - 1}`,
       adapterId: this.id,
-      title,
+      title: window.title,
       appName: this.appName,
       platform: "macos",
       metadata: {
         processName: this.processName,
-        windowIndex: index
+        windowIndex: window.windowIndex - 1
       }
     }));
   }
@@ -198,23 +182,7 @@ export class MacWindowAdapter implements ClientAdapter {
       };
     }
 
-    const escapedAppName = this.appName.replaceAll('"', '\\"');
-    const script = `
-      on run argv
-        set previousClipboard to the clipboard
-        set the clipboard to item 1 of argv
-        tell application "${escapedAppName}" to activate
-        delay 0.2
-        tell application "System Events"
-          keystroke "v" using command down
-          key code 36
-        end tell
-        delay 0.1
-        set the clipboard to previousClipboard
-      end run
-    `;
-
-    await runOsa(script, [input.text]);
+    await pasteAndSubmitText(this.appName, input.text);
     return {
       inputId: input.inputId,
       status: "delivered",
@@ -260,121 +228,8 @@ export class MacWindowAdapter implements ClientAdapter {
   }
 
   private async clickInteractionOption(optionId: string, label: string): Promise<void> {
-    const script = `
-      on run argv
-        set processName to item 1 of argv
-        set windowIndex to (item 2 of argv) as integer
-        set buttonLabel to item 3 of argv
-        tell application "System Events"
-          if not (exists process processName) then error "Process is not running: " & processName
-          tell process processName
-            set frontmost to true
-            repeat with candidate in entire contents of window windowIndex
-              try
-                if role of candidate is "AXButton" then
-                  set candidateName to ""
-                  try
-                    set candidateName to name of candidate as text
-                  end try
-                  if candidateName is buttonLabel then
-                    click candidate
-                    return "clicked"
-                  end if
-                end if
-              end try
-            end repeat
-          end tell
-        end tell
-        error "Button not found: " & buttonLabel
-      end run
-    `;
-
-    await runOsa(script, [this.processName, String(this.targetWindowIndex()), label || optionId]);
+    await clickButtonByLabel(this.processName, this.targetWindowIndex(), label || optionId);
   }
 }
-
-const runOsa = async (script: string, args: string[] = []): Promise<{ stdout: string; stderr: string }> => {
-  const result = await execFileAsync("osascript", ["-e", script, ...args], {
-    timeout: 10000,
-    maxBuffer: 1024 * 1024
-  });
-  return {
-    stdout: result.stdout,
-    stderr: result.stderr
-  };
-};
-
-const dumpAccessibilityTree = async (processName: string, windowIndex: number): Promise<string> => {
-  const script = `
-    on sanitize(rawValue)
-      set valueText to ""
-      try
-        set valueText to rawValue as text
-      end try
-      set AppleScript's text item delimiters to "\\\\"
-      set parts to every text item of valueText
-      set AppleScript's text item delimiters to "\\\\\\\\"
-      set valueText to parts as text
-      set AppleScript's text item delimiters to tab
-      set parts to every text item of valueText
-      set AppleScript's text item delimiters to "\\\\t"
-      set valueText to parts as text
-      set AppleScript's text item delimiters to linefeed
-      set parts to every text item of valueText
-      set AppleScript's text item delimiters to "\\\\n"
-      set valueText to parts as text
-      set AppleScript's text item delimiters to return
-      set parts to every text item of valueText
-      set AppleScript's text item delimiters to "\\\\n"
-      set valueText to parts as text
-      set AppleScript's text item delimiters to ""
-      return valueText
-    end sanitize
-
-    on run argv
-      set processName to item 1 of argv
-      set windowIndex to (item 2 of argv) as integer
-      tell application "System Events"
-        if not (exists process processName) then error "Process is not running: " & processName
-        tell process processName
-          set frontmost to true
-          set targetWindow to window windowIndex
-          set output to ""
-          repeat with elementRef in entire contents of targetWindow
-            set roleValue to ""
-            set roleDescriptionValue to ""
-            set nameValue to ""
-            set elementValue to ""
-            set descriptionValue to ""
-            set enabledValue to "false"
-            try
-              set roleValue to role of elementRef as text
-            end try
-            try
-              set roleDescriptionValue to role description of elementRef as text
-            end try
-            try
-              set nameValue to name of elementRef as text
-            end try
-            try
-              set elementValue to value of elementRef as text
-            end try
-            try
-              set descriptionValue to description of elementRef as text
-            end try
-            try
-              if enabled of elementRef is true then set enabledValue to "true"
-            end try
-            set output to output & sanitize(roleValue) & tab & sanitize(roleDescriptionValue) & tab & sanitize(nameValue) & tab & sanitize(elementValue) & tab & sanitize(descriptionValue) & tab & enabledValue & linefeed
-          end repeat
-          return output
-        end tell
-      end tell
-    end run
-  `;
-
-  const { stdout } = await runOsa(script, [processName, String(windowIndex)]);
-  return stdout;
-};
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

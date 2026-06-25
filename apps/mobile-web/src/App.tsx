@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ClaimPairingResponseSchema,
   RelayEnvelopeSchema,
@@ -21,7 +21,14 @@ type SessionModel = {
   deliveries: DeliveryState[];
 };
 
+type StoredPairing = {
+  serverUrl: string;
+  pairId: string;
+  mobileToken: string;
+};
+
 const defaultServer = `${window.location.protocol}//${window.location.hostname}:8787`;
+const pairingStorageKey = "easycode:pairing";
 
 export const App = () => {
   const [serverUrl, setServerUrl] = useState(defaultServer);
@@ -35,6 +42,8 @@ export const App = () => {
   const [draft, setDraft] = useState("");
   const socketRef = useRef<WebSocket | null>(null);
   const lastServerSeqRef = useRef(0);
+  const reconnectTimerRef = useRef<number | undefined>(undefined);
+  const reconnectAttemptRef = useRef(0);
 
   const selected = selectedSessionId ? sessions[selectedSessionId] : undefined;
   const latestDelivery = selected?.deliveries.at(-1);
@@ -56,6 +65,24 @@ export const App = () => {
     }
   }, [status]);
 
+  useEffect(() => {
+    const stored = loadStoredPairing();
+    if (!stored) return;
+
+    setServerUrl(stored.serverUrl);
+    setPairId(stored.pairId);
+    setMobileToken(stored.mobileToken);
+    connectSocket(stored.pairId, stored.mobileToken, stored.serverUrl);
+
+    return () => {
+      if (typeof reconnectTimerRef.current === "number") window.clearTimeout(reconnectTimerRef.current);
+      if (socketRef.current) {
+        socketRef.current.onclose = null;
+        socketRef.current.close();
+      }
+    };
+  }, []);
+
   const claimPairing = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
@@ -74,35 +101,53 @@ export const App = () => {
       const claimed = ClaimPairingResponseSchema.parse(await response.json());
       setPairId(claimed.pairId);
       setMobileToken(claimed.mobileToken);
-      connectSocket(claimed.pairId, claimed.mobileToken);
+      storePairing({
+        serverUrl,
+        pairId: claimed.pairId,
+        mobileToken: claimed.mobileToken
+      });
+      connectSocket(claimed.pairId, claimed.mobileToken, serverUrl);
     } catch (caught) {
       setStatus("error");
       setError(caught instanceof Error ? caught.message : String(caught));
     }
   };
 
-  const connectSocket = (nextPairId: string, nextMobileToken: string) => {
+  const connectSocket = (nextPairId: string, nextMobileToken: string, relayUrl = serverUrl) => {
+    if (typeof reconnectTimerRef.current === "number") {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = undefined;
+    }
     setStatus("connecting");
     const rememberedSeq = Number(window.localStorage.getItem(lastSeqKey(nextPairId)) ?? "0");
     lastServerSeqRef.current = Number.isFinite(rememberedSeq) ? rememberedSeq : 0;
-    const wsUrl = new URL("/v1/ws", serverUrl);
+    const wsUrl = new URL("/v1/ws", relayUrl);
     wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
     wsUrl.searchParams.set("pairId", nextPairId);
     wsUrl.searchParams.set("role", "mobile");
     wsUrl.searchParams.set("token", nextMobileToken);
     if (lastServerSeqRef.current > 0) wsUrl.searchParams.set("afterSeq", String(lastServerSeqRef.current));
 
-    socketRef.current?.close();
+    if (socketRef.current) {
+      socketRef.current.onclose = null;
+      socketRef.current.close();
+    }
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 
-    ws.onopen = () => setStatus("connected");
+    ws.onopen = () => {
+      reconnectAttemptRef.current = 0;
+      setStatus("connected");
+      setError("");
+    };
     ws.onerror = () => {
       setStatus("error");
       setError("WebSocket connection failed");
     };
     ws.onclose = () => {
-      if (socketRef.current === ws) setStatus("disconnected");
+      if (socketRef.current !== ws) return;
+      setStatus("disconnected");
+      scheduleReconnect(nextPairId, nextMobileToken, relayUrl);
     };
     ws.onmessage = (message) => {
       const parsed = RelayEnvelopeSchema.safeParse(JSON.parse(String(message.data)));
@@ -113,6 +158,17 @@ export const App = () => {
       rememberServerSeq(parsed.data);
       applyEnvelope(parsed.data);
     };
+  };
+
+  const scheduleReconnect = (nextPairId: string, nextMobileToken: string, relayUrl: string) => {
+    if (typeof reconnectTimerRef.current === "number") return;
+    const attempt = Math.min(reconnectAttemptRef.current + 1, 5);
+    reconnectAttemptRef.current = attempt;
+    const delayMs = Math.min(1000 * 2 ** (attempt - 1), 10000);
+    reconnectTimerRef.current = window.setTimeout(() => {
+      reconnectTimerRef.current = undefined;
+      connectSocket(nextPairId, nextMobileToken, relayUrl);
+    }, delayMs);
   };
 
   const rememberServerSeq = (envelope: RelayEnvelope) => {
@@ -279,6 +335,7 @@ export const App = () => {
 
       {status !== "connected" ? (
         <form className="connect" onSubmit={claimPairing}>
+          {pairId && mobileToken ? <p className="hint">Reconnecting to saved pairing...</p> : null}
           <label>
             Relay server
             <input value={serverUrl} onChange={(event) => setServerUrl(event.target.value)} spellCheck={false} />
@@ -375,3 +432,23 @@ const dedupeInteractions = (interactions: InteractionRequest[]): InteractionRequ
 };
 
 const lastSeqKey = (pairId: string): string => `easycode:last-server-seq:${pairId}`;
+
+const loadStoredPairing = (): StoredPairing | undefined => {
+  try {
+    const raw = window.localStorage.getItem(pairingStorageKey);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as Partial<StoredPairing>;
+    if (!parsed.serverUrl || !parsed.pairId || !parsed.mobileToken) return undefined;
+    return {
+      serverUrl: parsed.serverUrl,
+      pairId: parsed.pairId,
+      mobileToken: parsed.mobileToken
+    };
+  } catch {
+    return undefined;
+  }
+};
+
+const storePairing = (pairing: StoredPairing): void => {
+  window.localStorage.setItem(pairingStorageKey, JSON.stringify(pairing));
+};

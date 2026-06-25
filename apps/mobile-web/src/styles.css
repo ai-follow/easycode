@@ -135,6 +135,16 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.hint {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #ecfdf5;
+  color: #065f46;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .workspace {
   min-height: 0;
   display: grid;

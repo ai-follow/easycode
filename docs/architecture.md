@@ -51,6 +51,11 @@ Cursor should be the first real-client validation target. After Cursor is stable
 the same adapter can be tuned for Codex and Claude by adjusting process names,
 filtering rules, and client-specific selectors.
 
+`@easycode/desktop-agent` also exposes an `inspect` command that captures the
+same accessibility data without connecting to the relay. This is the preferred
+way to collect Cursor fixtures and tune parser rules before changing the live
+adapter path.
+
 ## Relay semantics
 
 The server treats payloads as opaque protocol messages. It may validate envelope
@@ -60,6 +65,10 @@ client-specific option labels such as approve, reject, continue, or stop.
 Each accepted envelope receives a per-pair `serverSeq`. Reconnecting clients can
 pass `afterSeq` to `/v1/ws` to receive only missed backlog items. This is a
 transport cursor, not a business-level acknowledgment.
+
+The mobile web client persists its relay URL and mobile pairing token in local
+storage after a successful claim. On socket close it reconnects with exponential
+backoff and includes the latest stored `afterSeq` cursor.
 
 ## Production backlog
 

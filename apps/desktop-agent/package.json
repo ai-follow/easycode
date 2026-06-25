@@ -6,10 +6,12 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "easycode-desktop": "./dist/index.js"
+    "easycode-desktop": "./dist/index.js",
+    "easycode-inspect": "./dist/inspect.js"
   },
   "scripts": {
     "dev": "tsx src/index.ts",
+    "inspect": "tsx src/inspect.ts",
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
