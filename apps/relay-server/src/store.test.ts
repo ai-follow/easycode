@@ -60,6 +60,27 @@ test("allows a pairing code to be claimed only once", async () => {
   assert.equal(await store.authenticate(pairing.pairId, "mobile", firstClaim.mobileToken), true);
 });
 
+test("stores pair tokens as hashes", async () => {
+  const store = new MemoryRelayStore();
+  const pairing = await store.createPairing();
+  const claim = await store.claimPairing(pairing.pairingCode);
+  assert.ok(claim);
+
+  assert.equal(await store.authenticate(pairing.pairId, "desktop", pairing.desktopToken), true);
+  assert.equal(await store.authenticate(pairing.pairId, "mobile", claim.mobileToken), true);
+
+  const records = (store as unknown as {
+    pairingsById: Map<string, { desktopTokenHash: string; mobileTokenHash?: string; desktopToken?: string; mobileToken?: string }>;
+  }).pairingsById;
+  const stored = records.get(pairing.pairId);
+
+  assert.ok(stored);
+  assert.equal(stored.desktopToken, undefined);
+  assert.equal(stored.mobileToken, undefined);
+  assert.notEqual(stored.desktopTokenHash, pairing.desktopToken);
+  assert.notEqual(stored.mobileTokenHash, claim.mobileToken);
+});
+
 test("revokes a pairing with a desktop or mobile token", async () => {
   const store = new MemoryRelayStore();
   const pairing = await store.createPairing();

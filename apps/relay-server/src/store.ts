@@ -1,4 +1,4 @@
-import { randomBytes, randomInt, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import type {
   ClaimPairingResponse,
   CreatePairingResponse,
@@ -32,8 +32,8 @@ export type RelayStore = {
 type PairingRecord = {
   pairId: string;
   pairingCode: string;
-  desktopToken: string;
-  mobileToken?: string;
+  desktopTokenHash: string;
+  mobileTokenHash?: string;
   expiresAtMs: number;
   nextServerSeq: number;
   connections: Map<string, RelayConnection>;
@@ -45,6 +45,7 @@ const PAIRING_TTL_MS = 10 * 60 * 1000;
 const BACKLOG_LIMIT = 200;
 
 const token = (): string => randomBytes(32).toString("base64url");
+const hashToken = (value: string): string => createHash("sha256").update(value).digest("base64url");
 const pairingCode = (): string => String(randomInt(100000, 1000000));
 const iso = (ms: number): string => new Date(ms).toISOString();
 
@@ -61,10 +62,11 @@ export class MemoryRelayStore implements RelayStore {
     this.gcExpired();
 
     const expiresAtMs = Date.now() + PAIRING_TTL_MS;
+    const desktopToken = token();
     const record: PairingRecord = {
       pairId: `pair_${randomUUID()}`,
       pairingCode: this.createUniquePairingCode(),
-      desktopToken: token(),
+      desktopTokenHash: hashToken(desktopToken),
       expiresAtMs,
       nextServerSeq: 1,
       connections: new Map(),
@@ -78,7 +80,7 @@ export class MemoryRelayStore implements RelayStore {
     return {
       pairId: record.pairId,
       pairingCode: record.pairingCode,
-      desktopToken: record.desktopToken,
+      desktopToken,
       expiresAt: iso(record.expiresAtMs)
     };
   }
@@ -88,14 +90,15 @@ export class MemoryRelayStore implements RelayStore {
     const record = this.pairingsByCode.get(code);
     if (!record) return undefined;
 
-    if (record.mobileToken) return undefined;
+    if (record.mobileTokenHash) return undefined;
 
-    record.mobileToken = token();
+    const mobileToken = token();
+    record.mobileTokenHash = hashToken(mobileToken);
     this.pairingsByCode.delete(code);
 
     return {
       pairId: record.pairId,
-      mobileToken: record.mobileToken,
+      mobileToken,
       expiresAt: iso(record.expiresAtMs)
     };
   }
@@ -104,8 +107,8 @@ export class MemoryRelayStore implements RelayStore {
     this.gcExpired();
     const record = this.pairingsById.get(pairId);
     if (!record) return false;
-    if (role === "desktop") return providedToken === record.desktopToken;
-    return Boolean(record.mobileToken) && providedToken === record.mobileToken;
+    if (role === "desktop") return tokenMatches(providedToken, record.desktopTokenHash);
+    return tokenMatches(providedToken, record.mobileTokenHash);
   }
 
   async addConnection(pairId: string, connection: RelayConnection, afterSeq?: number): Promise<RelayEnvelope[]> {
@@ -125,7 +128,7 @@ export class MemoryRelayStore implements RelayStore {
   async revokePairing(pairId: string, providedToken: string): Promise<boolean> {
     const record = this.pairingsById.get(pairId);
     if (!record) return false;
-    if (providedToken !== record.desktopToken && providedToken !== record.mobileToken) return false;
+    if (!tokenMatches(providedToken, record.desktopTokenHash) && !tokenMatches(providedToken, record.mobileTokenHash)) return false;
 
     this.pairingsById.delete(pairId);
     if (this.pairingsByCode.get(record.pairingCode) === record) {
@@ -185,7 +188,7 @@ export class MemoryRelayStore implements RelayStore {
   private gcExpired(): void {
     const now = Date.now();
     for (const record of this.pairingsById.values()) {
-      if (record.mobileToken || record.expiresAtMs > now) continue;
+      if (record.mobileTokenHash || record.expiresAtMs > now) continue;
       this.pairingsById.delete(record.pairId);
       if (this.pairingsByCode.get(record.pairingCode) === record) {
         this.pairingsByCode.delete(record.pairingCode);
@@ -193,3 +196,11 @@ export class MemoryRelayStore implements RelayStore {
     }
   }
 }
+
+const tokenMatches = (providedToken: string, expectedHash: string | undefined): boolean => {
+  if (!expectedHash) return false;
+  const providedHash = hashToken(providedToken);
+  const provided = Buffer.from(providedHash);
+  const expected = Buffer.from(expectedHash);
+  return provided.length === expected.length && timingSafeEqual(provided, expected);
+};
