@@ -47,6 +47,8 @@ Relay WebSockets use heartbeat pings to clear dead connections. Override the
 interval with `EASYCODE_WS_HEARTBEAT_MS`.
 The desktop agent reconnects automatically and keeps a short in-memory send
 queue while the relay socket is unavailable.
+If the relay rejects the desktop socket token, the desktop agent stops
+reconnecting because the pairing is no longer valid.
 Use `/health` for diagnostics and `/ready` for container readiness probes.
 Set `EASYCODE_ALLOWED_ORIGINS` to a comma-separated allowlist for hosted mobile
 web clients; the default is `*` for local development.

@@ -79,6 +79,15 @@ export class DesktopRelayClient {
         resolve();
       });
       ws.once("error", reject);
+      ws.once("unexpected-response", (_request, response) => {
+        if (response.statusCode === 401 || response.statusCode === 403) {
+          this.stopReconnect();
+          reject(new Error(`Relay rejected desktop socket authentication: ${response.statusCode}`));
+          return;
+        }
+
+        reject(new Error(`Unexpected relay socket response: ${response.statusCode}`));
+      });
     }).finally(() => {
       this.connecting = undefined;
     });
@@ -97,8 +106,13 @@ export class DesktopRelayClient {
       if (!this.closed) console.error(`[desktop] relay socket error: ${error.message}`);
     });
 
-    ws.on("close", () => {
+    ws.on("close", (_code, reason) => {
       if (this.ws === ws) this.ws = undefined;
+      if (reason.toString() === "Pairing revoked") {
+        this.stopReconnect();
+        console.error("[desktop] relay pairing was revoked; reconnect stopped");
+        return;
+      }
       if (!this.closed) this.scheduleReconnect();
     });
 
@@ -152,6 +166,13 @@ export class DesktopRelayClient {
         this.scheduleReconnect();
       });
     }, delayMs);
+  }
+
+  private stopReconnect(): void {
+    this.closed = true;
+    this.sendQueue.length = 0;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
   }
 }
 
