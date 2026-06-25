@@ -88,8 +88,9 @@ If the relay rejects the desktop socket with 401 or 403, the client treats the
 pairing as invalid and stops reconnecting.
 
 Hosted relays can restrict browser access with `EASYCODE_ALLOWED_ORIGINS`. This
-is CORS hardening for the mobile web client, not a replacement for pairing and
-socket tokens.
+is HTTP CORS and WebSocket Origin hardening for the mobile web client, not a
+replacement for pairing and socket tokens. Non-browser desktop or native clients
+may omit Origin and still authenticate with their pair token.
 
 ## Relay storage roadmap
 

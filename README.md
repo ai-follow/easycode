@@ -52,7 +52,8 @@ If the relay rejects the desktop socket token, the desktop agent stops
 reconnecting because the pairing is no longer valid.
 Use `/health` for diagnostics and `/ready` for container readiness probes.
 Set `EASYCODE_ALLOWED_ORIGINS` to a comma-separated allowlist for hosted mobile
-web clients; the default is `*` for local development.
+web clients; the default is `*` for local development. The allowlist is applied
+to HTTP CORS and browser WebSocket Origin headers.
 Set `EASYCODE_RELAY_STORE=memory` to select the current in-memory relay store.
 The store is behind an interface so PostgreSQL/Redis-backed drivers can replace
 it without changing the HTTP or WebSocket protocol layers.

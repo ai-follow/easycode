@@ -11,15 +11,17 @@ import {
   type RelayEnvelope
 } from "@easycode/protocol";
 import { createRequestHandler } from "./http.js";
+import { isOriginAllowed, parseAllowedOrigins } from "./origins.js";
 import { createRelayStore } from "./store.js";
 
 const port = Number(process.env.PORT ?? 8787);
 const heartbeatIntervalMs = parsePositiveInt(process.env.EASYCODE_WS_HEARTBEAT_MS, 30000);
 const startedAt = new Date();
 const store = createRelayStore(process.env.EASYCODE_RELAY_STORE);
+const allowedOrigins = parseAllowedOrigins(process.env.EASYCODE_ALLOWED_ORIGINS);
 const server = createServer(createRequestHandler(store, {
   adminToken: process.env.EASYCODE_RELAY_ADMIN_TOKEN,
-  allowedOrigins: parseAllowedOrigins(process.env.EASYCODE_ALLOWED_ORIGINS),
+  allowedOrigins,
   heartbeatIntervalMs,
   serviceVersion: process.env.npm_package_version,
   startedAt
@@ -61,6 +63,13 @@ const handleUpgrade = async (
   const roleResult = DeviceRoleSchema.safeParse(url.searchParams.get("role"));
   const token = url.searchParams.get("token") ?? "";
   const afterSeq = parseOptionalPositiveInt(url.searchParams.get("afterSeq"));
+  const origin = headerValue(request.headers.origin);
+
+  if (origin && !isOriginAllowed(origin, allowedOrigins)) {
+    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+    socket.destroy();
+    return;
+  }
 
   if (!roleResult.success || !(await store.authenticate(pairId, roleResult.data, token))) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
@@ -160,10 +169,7 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function parseAllowedOrigins(value: string | undefined): string[] | undefined {
-  if (!value) return undefined;
-  return value.split(",").map((origin) => origin.trim()).filter(Boolean);
-}
+const headerValue = (value: string | string[] | undefined): string | undefined => Array.isArray(value) ? value[0] : value;
 
 const serverError = (pairId: string, message: string, refId?: string): RelayEnvelope => ({
   id: `server_${randomUUID()}`,

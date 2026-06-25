@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RelayStore } from "./store.js";
+import { isOriginAllowed, normalizeAllowedOrigins } from "./origins.js";
 
 type RequestHandlerOptions = {
   adminToken?: string;
@@ -157,8 +158,5 @@ const isCorsAllowed = (request: IncomingMessage, options: RequestHandlerOptions)
   if (allowedOrigins.length === 0 || allowedOrigins.includes("*")) return true;
 
   const origin = request.headers.origin;
-  return Boolean(origin && allowedOrigins.includes(origin));
+  return isOriginAllowed(typeof origin === "string" ? origin : undefined, allowedOrigins);
 };
-
-const normalizeAllowedOrigins = (allowedOrigins: string[] | undefined): string[] =>
-  (allowedOrigins ?? []).map((origin) => origin.trim()).filter(Boolean);
