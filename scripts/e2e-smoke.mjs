@@ -53,6 +53,26 @@ try {
   const sessionId = snapshot.payload.sessionId;
   const seqAfterSnapshot = maxServerSeq(first.received);
 
+  first.ws.send(
+    JSON.stringify({
+      id: `env_${randomUUID()}`,
+      pairId,
+      source: "desktop",
+      createdAt: new Date().toISOString(),
+      payload: {
+        kind: "ping",
+        nonce: "wrong-source"
+      }
+    })
+  );
+  await waitFor(
+    first.received,
+    (envelope) =>
+      envelope.payload.kind === "error" &&
+      envelope.payload.message.includes("Envelope pairId/source does not match the authenticated socket"),
+    "relay source mismatch error"
+  );
+
   sendMobile(first.ws, pairId, {
     kind: "user_input",
     sessionId,

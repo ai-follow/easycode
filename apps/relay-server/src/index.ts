@@ -107,23 +107,28 @@ const handleConnection = async (ws: WebSocket, pairId: string, role: DeviceRole,
   }
 
   ws.on("message", async (raw: RawData) => {
-    const parsedJson = safeJson(raw.toString());
-    const parsed = RelayEnvelopeSchema.safeParse(parsedJson);
-    if (!parsed.success) {
-      ws.send(JSON.stringify(serverError(pairId, parsed.error.message)));
-      return;
-    }
+    try {
+      const parsedJson = safeJson(raw.toString());
+      const parsed = RelayEnvelopeSchema.safeParse(parsedJson);
+      if (!parsed.success) {
+        ws.send(JSON.stringify(serverError(pairId, parsed.error.message)));
+        return;
+      }
 
-    const envelope = parsed.data;
-    if (envelope.pairId !== pairId || envelope.source !== role) {
-      ws.send(JSON.stringify(serverError(pairId, "Envelope pairId/source does not match the authenticated socket", envelope.id)));
-      return;
-    }
+      const envelope = parsed.data;
+      if (envelope.pairId !== pairId || envelope.source !== role) {
+        ws.send(JSON.stringify(serverError(pairId, "Envelope pairId/source does not match the authenticated socket", envelope.id)));
+        return;
+      }
 
-    const accepted = await store.acceptEnvelope(envelope);
-    if (accepted.duplicate) return;
-    if (!accepted.envelope) return;
-    for (const recipient of accepted.recipients) recipient.send(accepted.envelope);
+      const accepted = await store.acceptEnvelope(envelope);
+      if (accepted.duplicate) return;
+      if (!accepted.envelope) return;
+      for (const recipient of accepted.recipients) recipient.send(accepted.envelope);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      ws.send(JSON.stringify(serverError(pairId, message)));
+    }
   });
 
   ws.on("close", () => {
