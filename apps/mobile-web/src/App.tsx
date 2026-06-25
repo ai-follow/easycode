@@ -9,6 +9,7 @@ import {
   type RelayEnvelope,
   type RelayPayload
 } from "@easycode/protocol";
+import { buildMobileWebSocketUrl, nextReconnectAttempt, reconnectDelayMs } from "./mobileConnection.js";
 import { MobileOutbox } from "./mobileOutbox.js";
 import { applyMobileRelayPayload, emptyMobileRelayState, removePendingInteraction } from "./mobileRelayState.js";
 import {
@@ -122,12 +123,12 @@ export const App = () => {
     await restoreE2eeSession(nextPairId);
     const rememberedSeq = Number(window.localStorage.getItem(lastSeqKey(nextPairId)) ?? "0");
     lastServerSeqRef.current = Number.isFinite(rememberedSeq) ? rememberedSeq : 0;
-    const wsUrl = new URL("/v1/ws", relayUrl);
-    wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
-    wsUrl.searchParams.set("pairId", nextPairId);
-    wsUrl.searchParams.set("role", "mobile");
-    wsUrl.searchParams.set("token", nextMobileToken);
-    if (lastServerSeqRef.current > 0) wsUrl.searchParams.set("afterSeq", String(lastServerSeqRef.current));
+    const wsUrl = buildMobileWebSocketUrl({
+      relayUrl,
+      pairId: nextPairId,
+      mobileToken: nextMobileToken,
+      afterSeq: lastServerSeqRef.current
+    });
 
     if (socketRef.current) {
       socketRef.current.onclose = null;
@@ -179,9 +180,9 @@ export const App = () => {
 
   const scheduleReconnect = (nextPairId: string, nextMobileToken: string, relayUrl: string) => {
     if (typeof reconnectTimerRef.current === "number") return;
-    const attempt = Math.min(reconnectAttemptRef.current + 1, 5);
+    const attempt = nextReconnectAttempt(reconnectAttemptRef.current);
     reconnectAttemptRef.current = attempt;
-    const delayMs = Math.min(1000 * 2 ** (attempt - 1), 10000);
+    const delayMs = reconnectDelayMs({ attempt });
     reconnectTimerRef.current = window.setTimeout(() => {
       reconnectTimerRef.current = undefined;
       void connectSocket(nextPairId, nextMobileToken, relayUrl);
