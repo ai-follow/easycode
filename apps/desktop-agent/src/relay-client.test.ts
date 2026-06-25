@@ -4,7 +4,7 @@ import { test } from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
 import { RelayE2eeSession, type SerializedRelayE2eeSession } from "@easycode/e2ee";
 import type { RelayEnvelope, RelayPayload } from "@easycode/protocol";
-import { DesktopRelayClient, RelayAuthenticationError, type RelayE2eeSessionStore } from "./relay-client.js";
+import { DesktopRelayClient, RelayAuthenticationError, revokePairing, type RelayE2eeSessionStore } from "./relay-client.js";
 
 test("retries unacknowledged envelopes with the same id after reconnect", async () => {
   const received: RelayEnvelope[] = [];
@@ -254,6 +254,30 @@ test("reports invalid pairing when relay rejects desktop socket authentication",
   } finally {
     client.close();
     await harness.close();
+  }
+});
+
+test("revokePairing sends the desktop pair token to the relay", async () => {
+  let method = "";
+  let path = "";
+  let authorization = "";
+  const httpServer = createServer((request, response) => {
+    method = request.method ?? "";
+    path = request.url ?? "";
+    authorization = request.headers.authorization ?? "";
+    response.writeHead(204).end();
+  });
+  await listen(httpServer);
+  const address = httpServer.address();
+  if (typeof address !== "object" || !address) throw new Error("HTTP test server did not bind to a port");
+
+  try {
+    assert.equal(await revokePairing(`http://127.0.0.1:${address.port}`, "pair_test", "desktop_token_test"), true);
+    assert.equal(method, "DELETE");
+    assert.equal(path, "/v1/pairings/pair_test");
+    assert.equal(authorization, "Bearer desktop_token_test");
+  } finally {
+    await closeHttpServer(httpServer);
   }
 });
 

@@ -383,6 +383,22 @@ export const createPairing = async (serverUrl: string, relayToken?: string): Pro
   return CreatePairingResponseSchema.parse(await response.json());
 };
 
+export const revokePairing = async (serverUrl: string, pairId: string, pairToken: string): Promise<boolean> => {
+  const response = await fetch(new URL(`/v1/pairings/${pairId}`, serverUrl), {
+    method: "DELETE",
+    headers: {
+      authorization: `Bearer ${pairToken}`
+    }
+  });
+
+  if (response.status === 204) return true;
+  if (response.status === 401 || response.status === 404) return false;
+  if (!response.ok) {
+    throw new Error(`Failed to revoke pairing: ${response.status} ${await response.text()}`);
+  }
+  return true;
+};
+
 const safeJson = (raw: string): unknown => {
   try {
     return JSON.parse(raw);

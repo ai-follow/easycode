@@ -4,7 +4,7 @@ import type { AdapterName } from "./adapters/index.js";
 import { createAdapter } from "./adapters/index.js";
 import { defaultE2eeStateDir, FileRelayE2eeSessionStore } from "./e2ee-state.js";
 import { defaultPairingStateFile, FileDesktopPairingStore, type DesktopPairingStore, type StoredDesktopPairing } from "./pairing-state.js";
-import { createPairing, DesktopRelayClient, RelayAuthenticationError } from "./relay-client.js";
+import { createPairing, DesktopRelayClient, RelayAuthenticationError, revokePairing } from "./relay-client.js";
 import { formatTargets, selectTarget } from "./target-selection.js";
 
 type CliOptions = {
@@ -64,6 +64,7 @@ const main = async (): Promise<void> => {
   if (options.e2ee) console.log(`[desktop] e2ee state dir=${options.e2eeStateDir}`);
   const pairingStore = new FileDesktopPairingStore(options.pairingStateFile);
   if (options.resetPairing) {
+    await revokeSavedPairing(options, pairingStore);
     await pairingStore.delete();
     console.log("[desktop] cleared saved pairing state");
   }
@@ -218,6 +219,17 @@ async function createAndSavePairing(options: CliOptions, store: DesktopPairingSt
     ...pairing,
     reused: false
   };
+}
+
+async function revokeSavedPairing(options: CliOptions, store: DesktopPairingStore): Promise<void> {
+  const stored = await store.load(options.serverUrl);
+  if (!stored) return;
+  try {
+    const revoked = await revokePairing(options.serverUrl, stored.pairId, stored.desktopToken);
+    if (revoked) console.log(`[desktop] revoked saved pairing pairId=${stored.pairId}`);
+  } catch (error) {
+    console.error(`[desktop] failed to revoke saved pairing before reset: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function activePairingFromStored(stored: StoredDesktopPairing): ActivePairing {
