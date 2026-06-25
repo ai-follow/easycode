@@ -69,6 +69,9 @@ After the first successful claim, the mobile web client stores the pairing
 credentials locally and will reconnect automatically.
 Use `Forget pairing` in the mobile web client to clear local credentials and
 revoke the relay pairing.
+If a pairing is revoked by either device, existing relay sockets are closed with
+the shared `PAIRING_REVOKED_CLOSE_CODE`, and clients stop reconnecting with the
+invalid credentials.
 On Android Chrome, use the browser install prompt or "Add to Home screen" after
 opening the mobile web URL.
 

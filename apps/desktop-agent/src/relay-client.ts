@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import {
   CreatePairingResponseSchema,
+  PAIRING_REVOKED_CLOSE_CODE,
+  PAIRING_REVOKED_CLOSE_REASON,
   RelayEnvelopeSchema,
   type CreatePairingResponse,
   type RelayEnvelope,
@@ -106,9 +108,9 @@ export class DesktopRelayClient {
       if (!this.closed) console.error(`[desktop] relay socket error: ${error.message}`);
     });
 
-    ws.on("close", (_code, reason) => {
+    ws.on("close", (code, reason) => {
       if (this.ws === ws) this.ws = undefined;
-      if (reason.toString() === "Pairing revoked") {
+      if (code === PAIRING_REVOKED_CLOSE_CODE || reason.toString() === PAIRING_REVOKED_CLOSE_REASON) {
         this.stopReconnect();
         console.error("[desktop] relay pairing was revoked; reconnect stopped");
         return;

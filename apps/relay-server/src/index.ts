@@ -1,7 +1,14 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import WebSocket, { WebSocketServer, type RawData } from "ws";
-import { DeviceRoleSchema, RelayEnvelopeSchema, type DeviceRole, type RelayEnvelope } from "@easycode/protocol";
+import {
+  DeviceRoleSchema,
+  PAIRING_REVOKED_CLOSE_CODE,
+  PAIRING_REVOKED_CLOSE_REASON,
+  RelayEnvelopeSchema,
+  type DeviceRole,
+  type RelayEnvelope
+} from "@easycode/protocol";
 import { createRequestHandler } from "./http.js";
 import { createRelayStore } from "./store.js";
 
@@ -66,7 +73,7 @@ const handleConnection = (ws: WebSocket, pairId: string, role: DeviceRole, after
     id: connectionId,
     role,
     send: (envelope) => send(connectionId, (data) => ws.send(data), envelope),
-    close: () => ws.close(1000, "Pairing revoked")
+    close: () => ws.close(PAIRING_REVOKED_CLOSE_CODE, PAIRING_REVOKED_CLOSE_REASON)
   }, afterSeq);
 
   console.log(`[relay] ${role} connected pairId=${pairId} connection=${connectionId}`);

@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ClaimPairingResponseSchema,
+  PAIRING_REVOKED_CLOSE_CODE,
+  PAIRING_REVOKED_CLOSE_REASON,
   RelayEnvelopeSchema,
   type AttachedSession,
   type ClientMessage,
@@ -144,8 +146,14 @@ export const App = () => {
       setStatus("error");
       setError("WebSocket connection failed");
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (socketRef.current !== ws) return;
+      if (event.code === PAIRING_REVOKED_CLOSE_CODE || event.reason === PAIRING_REVOKED_CLOSE_REASON) {
+        clearLocalPairingState(nextPairId, false);
+        setStatus("error");
+        setError("Pairing was revoked. Connect with a new code.");
+        return;
+      }
       setStatus("disconnected");
       scheduleReconnect(nextPairId, nextMobileToken, relayUrl);
     };
@@ -328,16 +336,28 @@ export const App = () => {
     const currentMobileToken = mobileToken;
     const currentServerUrl = serverUrl;
 
+    clearLocalPairingState(currentPairId);
+    setError("");
+    setStatus("disconnected");
+
+    if (currentPairId && currentMobileToken) {
+      void revokePairing(currentServerUrl, currentPairId, currentMobileToken);
+    }
+  };
+
+  const clearLocalPairingState = (currentPairId = pairId, closeSocket = true) => {
     if (typeof reconnectTimerRef.current === "number") {
       window.clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = undefined;
     }
-    if (socketRef.current) {
+    if (socketRef.current && closeSocket) {
       socketRef.current.onclose = null;
       socketRef.current.close();
       socketRef.current = null;
+    } else if (!closeSocket) {
+      socketRef.current = null;
     }
-    if (pairId) window.localStorage.removeItem(lastSeqKey(pairId));
+    if (currentPairId) window.localStorage.removeItem(lastSeqKey(currentPairId));
     window.localStorage.removeItem(pairingStorageKey);
     reconnectAttemptRef.current = 0;
     lastServerSeqRef.current = 0;
@@ -346,12 +366,6 @@ export const App = () => {
     setSessions({});
     setSelectedSessionId("");
     setDraft("");
-    setError("");
-    setStatus("disconnected");
-
-    if (currentPairId && currentMobileToken) {
-      void revokePairing(currentServerUrl, currentPairId, currentMobileToken);
-    }
   };
 
   return (

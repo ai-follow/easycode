@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { randomUUID } from "node:crypto";
+import { PAIRING_REVOKED_CLOSE_CODE, PAIRING_REVOKED_CLOSE_REASON } from "../packages/protocol/dist/index.js";
 
 const root = new URL("..", import.meta.url);
 const port = await findOpenPort();
@@ -116,6 +117,8 @@ try {
   }
   replay.ws.close();
 
+  const revoked = await connectMobile(serverUrl, pairId, mobileToken, maxServerSeq(replay.received));
+  const revokedClose = waitForClose(revoked.ws);
   const revoke = await fetch(`${serverUrl}/v1/pairings/${pairId}`, {
     method: "DELETE",
     headers: {
@@ -123,6 +126,10 @@ try {
     }
   });
   if (revoke.status !== 204) throw new Error(`Expected pairing revoke to return 204, got ${revoke.status}`);
+  const closeEvent = await revokedClose;
+  if (closeEvent.code !== PAIRING_REVOKED_CLOSE_CODE || closeEvent.reason !== PAIRING_REVOKED_CLOSE_REASON) {
+    throw new Error(`Expected revoke close ${PAIRING_REVOKED_CLOSE_CODE}/${PAIRING_REVOKED_CLOSE_REASON}, got ${closeEvent.code}/${closeEvent.reason}`);
+  }
 
   console.log(`e2e smoke ok pair=${pairId} session=${sessionId} replayed=${replayedSeqs.join(",")}`);
 } finally {
@@ -233,6 +240,18 @@ function waitForText(read, pattern, label, timeoutMs) {
         reject(new Error(`Timed out waiting for ${label}\n${output}`));
       }
     }, 50);
+  });
+}
+
+function waitForClose(ws, timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error("Timed out waiting for WebSocket close"));
+    }, timeoutMs);
+    ws.addEventListener("close", (event) => {
+      clearTimeout(timeout);
+      resolve(event);
+    }, { once: true });
   });
 }
 

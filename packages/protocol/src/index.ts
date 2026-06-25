@@ -6,6 +6,9 @@ export type ClientAdapterId = z.infer<typeof ClientAdapterIdSchema>;
 export const DeviceRoleSchema = z.enum(["desktop", "mobile"]);
 export type DeviceRole = z.infer<typeof DeviceRoleSchema>;
 
+export const PAIRING_REVOKED_CLOSE_CODE = 4001;
+export const PAIRING_REVOKED_CLOSE_REASON = "Pairing revoked";
+
 export const RelaySourceSchema = z.enum(["desktop", "mobile", "server"]);
 export type RelaySource = z.infer<typeof RelaySourceSchema>;
 
