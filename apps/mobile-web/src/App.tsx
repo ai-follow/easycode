@@ -1,37 +1,28 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { RelayE2eeSession, type CleartextRelayPayload, type SerializedRelayE2eeSession } from "@easycode/e2ee";
+import { RelayE2eeSession, type CleartextRelayPayload } from "@easycode/e2ee";
 import {
   ClaimPairingResponseSchema,
   PAIRING_REVOKED_CLOSE_CODE,
   PAIRING_REVOKED_CLOSE_REASON,
   RelayEnvelopeSchema,
-  type AttachedSession,
-  type ClientMessage,
-  type DeliveryState,
   type InteractionRequest,
   type RelayEnvelope,
-  type RelayPayload,
-  type SessionState
+  type RelayPayload
 } from "@easycode/protocol";
+import { applyMobileRelayPayload, emptyMobileRelayState, removePendingInteraction } from "./mobileRelayState.js";
+import {
+  e2eeStorageKey,
+  lastSeqKey,
+  loadStoredE2eeSession,
+  loadStoredPairing,
+  pairingStorageKey,
+  shouldEncryptPayload,
+  storePairing
+} from "./mobileStorage.js";
 
 type ConnectionState = "disconnected" | "claiming" | "connecting" | "connected" | "error";
 
-type SessionModel = {
-  session?: AttachedSession;
-  messages: ClientMessage[];
-  pendingInteractions: InteractionRequest[];
-  state?: SessionState;
-  deliveries: DeliveryState[];
-};
-
-type StoredPairing = {
-  serverUrl: string;
-  pairId: string;
-  mobileToken: string;
-};
-
 const defaultServer = `${window.location.protocol}//${window.location.hostname}:8787`;
-const pairingStorageKey = "easycode:pairing";
 const mobileSendQueueLimit = 200;
 
 export const App = () => {
@@ -41,8 +32,7 @@ export const App = () => {
   const [error, setError] = useState("");
   const [pairId, setPairId] = useState("");
   const [mobileToken, setMobileToken] = useState("");
-  const [sessions, setSessions] = useState<Record<string, SessionModel>>({});
-  const [selectedSessionId, setSelectedSessionId] = useState("");
+  const [mobileState, setMobileState] = useState(emptyMobileRelayState);
   const [draft, setDraft] = useState("");
   const [pendingOutboundCount, setPendingOutboundCount] = useState(0);
   const socketRef = useRef<WebSocket | null>(null);
@@ -54,6 +44,7 @@ export const App = () => {
   const e2eeRef = useRef<RelayE2eeSession | null>(null);
   const e2eePairIdRef = useRef("");
 
+  const { sessions, selectedSessionId } = mobileState;
   const selected = selectedSessionId ? sessions[selectedSessionId] : undefined;
   const latestDelivery = selected?.deliveries.at(-1);
 
@@ -75,7 +66,7 @@ export const App = () => {
   }, [status]);
 
   useEffect(() => {
-    const stored = loadStoredPairing();
+    const stored = loadStoredPairing(window.localStorage);
     if (!stored) return;
 
     setServerUrl(stored.serverUrl);
@@ -110,7 +101,7 @@ export const App = () => {
       const claimed = ClaimPairingResponseSchema.parse(await response.json());
       setPairId(claimed.pairId);
       setMobileToken(claimed.mobileToken);
-      storePairing({
+      storePairing(window.localStorage, {
         serverUrl,
         pairId: claimed.pairId,
         mobileToken: claimed.mobileToken
@@ -248,85 +239,22 @@ export const App = () => {
     if (payload.kind === "ping") return;
 
     if (payload.kind === "desktop_status") {
-      setSessions((current) => {
-        const next = { ...current };
-        for (const session of payload.sessions) {
-          const existing = next[session.sessionId] ?? {
-            session,
-            messages: [],
-            pendingInteractions: [],
-            deliveries: []
-          };
-          next[session.sessionId] = { ...existing, session };
-        }
-        setSelectedSessionId((current) => current || payload.sessions[0]?.sessionId || "");
-        return next;
-      });
+      applyPayload(payload);
       return;
     }
 
     if (payload.kind === "session_snapshot") {
-      setSessions((current) => ({
-        ...current,
-        [payload.sessionId]: {
-          session: current[payload.sessionId]?.session,
-          messages: dedupeMessages(payload.snapshot.messages),
-          pendingInteractions: payload.snapshot.pendingInteractions,
-          state: payload.snapshot.state,
-          deliveries: current[payload.sessionId]?.deliveries ?? []
-        }
-      }));
-      setSelectedSessionId((current) => current || payload.sessionId);
+      applyPayload(payload);
       return;
     }
 
     if (payload.kind === "client_event") {
-      setSessions((current) => {
-        const previous = current[payload.sessionId] ?? {
-          messages: [],
-          pendingInteractions: [],
-          deliveries: []
-        };
-
-        if (payload.event.type === "message") {
-          return {
-            ...current,
-            [payload.sessionId]: {
-              ...previous,
-              messages: dedupeMessages([...previous.messages, payload.event.payload])
-            }
-          };
-        }
-
-        if (payload.event.type === "interaction_request") {
-          return {
-            ...current,
-            [payload.sessionId]: {
-              ...previous,
-              pendingInteractions: dedupeInteractions([...previous.pendingInteractions, payload.event.payload])
-            }
-          };
-        }
-
-        if (payload.event.type === "session_state") {
-          return {
-            ...current,
-            [payload.sessionId]: {
-              ...previous,
-              state: payload.event.payload
-            }
-          };
-        }
-
-        return {
-          ...current,
-          [payload.sessionId]: {
-            ...previous,
-            deliveries: [...previous.deliveries, payload.event.payload].slice(-20)
-          }
-        };
-      });
+      applyPayload(payload);
     }
+  };
+
+  const applyPayload = (payload: RelayPayload) => {
+    setMobileState((current) => applyMobileRelayPayload(current, payload));
   };
 
   const sendPayload = async (payload: RelayPayload): Promise<boolean> => {
@@ -443,16 +371,10 @@ export const App = () => {
     });
     if (!sent) return;
 
-    setSessions((current) => {
-      const previous = current[selectedSessionId];
+    setMobileState((current) => {
+      const previous = current.sessions[selectedSessionId];
       if (!previous) return current;
-      return {
-        ...current,
-        [selectedSessionId]: {
-          ...previous,
-          pendingInteractions: previous.pendingInteractions.filter((item) => item.id !== request.id)
-        }
-      };
+      return removePendingInteraction(current, selectedSessionId, request.id);
     });
   };
 
@@ -494,8 +416,7 @@ export const App = () => {
     updatePendingOutboundCount();
     setPairId("");
     setMobileToken("");
-    setSessions({});
-    setSelectedSessionId("");
+    setMobileState(emptyMobileRelayState());
     setDraft("");
   };
 
@@ -514,7 +435,7 @@ export const App = () => {
 
   const restoreE2eeSession = async (nextPairId: string): Promise<RelayE2eeSession | undefined> => {
     if (e2eeRef.current && e2eePairIdRef.current === nextPairId) return e2eeRef.current;
-    const stored = loadStoredE2eeSession(nextPairId);
+    const stored = loadStoredE2eeSession(window.localStorage, nextPairId);
     if (!stored) return undefined;
     try {
       const session = await RelayE2eeSession.restore(stored);
@@ -572,7 +493,13 @@ export const App = () => {
       ) : (
         <section className="workspace">
           <div className="sessionbar">
-            <select value={selectedSessionId} onChange={(event) => setSelectedSessionId(event.target.value)}>
+            <select
+              value={selectedSessionId}
+              onChange={(event) => setMobileState((current) => ({
+                ...current,
+                selectedSessionId: event.target.value
+              }))}
+            >
               {Object.entries(sessions).map(([id, model]) => (
                 <option key={id} value={id}>
                   {model.session?.title ?? id}
@@ -636,75 +563,6 @@ export const App = () => {
     </main>
   );
 };
-
-const dedupeMessages = (messages: ClientMessage[]): ClientMessage[] => {
-  const seen = new Set<string>();
-  return messages.filter((message) => {
-    if (seen.has(message.id)) return false;
-    seen.add(message.id);
-    return true;
-  });
-};
-
-const dedupeInteractions = (interactions: InteractionRequest[]): InteractionRequest[] => {
-  const seen = new Set<string>();
-  return interactions.filter((interaction) => {
-    if (seen.has(interaction.id)) return false;
-    seen.add(interaction.id);
-    return true;
-  });
-};
-
-const lastSeqKey = (pairId: string): string => `easycode:last-server-seq:${pairId}`;
-const e2eeStorageKey = (pairId: string): string => `easycode:e2ee-session:${pairId}`;
-
-const loadStoredPairing = (): StoredPairing | undefined => {
-  try {
-    const raw = window.localStorage.getItem(pairingStorageKey);
-    if (!raw) return undefined;
-    const parsed = JSON.parse(raw) as Partial<StoredPairing>;
-    if (!parsed.serverUrl || !parsed.pairId || !parsed.mobileToken) return undefined;
-    return {
-      serverUrl: parsed.serverUrl,
-      pairId: parsed.pairId,
-      mobileToken: parsed.mobileToken
-    };
-  } catch {
-    return undefined;
-  }
-};
-
-const storePairing = (pairing: StoredPairing): void => {
-  window.localStorage.setItem(pairingStorageKey, JSON.stringify(pairing));
-};
-
-const loadStoredE2eeSession = (pairId: string): SerializedRelayE2eeSession | undefined => {
-  try {
-    const raw = window.localStorage.getItem(e2eeStorageKey(pairId));
-    if (!raw) return undefined;
-    const parsed = JSON.parse(raw) as Partial<SerializedRelayE2eeSession>;
-    if (
-      parsed.version !== 1 ||
-      parsed.role !== "mobile" ||
-      parsed.pairId !== pairId ||
-      !parsed.keyId ||
-      !parsed.publicKey ||
-      !parsed.privateKeyJwk
-    ) {
-      return undefined;
-    }
-    return parsed as SerializedRelayE2eeSession;
-  } catch {
-    return undefined;
-  }
-};
-
-const shouldEncryptPayload = (payload: RelayPayload): boolean =>
-  payload.kind !== "ack" &&
-  payload.kind !== "error" &&
-  payload.kind !== "ping" &&
-  payload.kind !== "key_exchange" &&
-  payload.kind !== "encrypted_payload";
 
 const safeJson = (raw: string): unknown => {
   try {

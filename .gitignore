@@ -8,3 +8,4 @@ dist/
 !.env.example
 .easycode/
 apps/mobile-web/.vite/
+apps/mobile-web/dist-test/
