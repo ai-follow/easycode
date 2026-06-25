@@ -45,6 +45,8 @@ pnpm dev:desktop -- --adapter mock --server http://localhost:8787 --relay-token 
 
 Relay WebSockets use heartbeat pings to clear dead connections. Override the
 interval with `EASYCODE_WS_HEARTBEAT_MS`.
+The desktop agent reconnects automatically and keeps a short in-memory send
+queue while the relay socket is unavailable.
 
 The desktop agent prints a pairing code. In another terminal:
 

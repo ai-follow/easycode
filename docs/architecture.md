@@ -79,6 +79,10 @@ The relay sends WebSocket heartbeat pings and terminates clients that do not
 respond by the next interval. This lets desktop and mobile clients fall back to
 their reconnect behavior instead of silently hanging on dead sockets.
 
+The desktop relay client also reconnects automatically and queues a bounded set
+of outbound payloads while disconnected. This protects transient relay socket
+loss without changing adapter behavior.
+
 ## Production backlog
 
 - Replace in-memory relay store with PostgreSQL and Redis implementations.
