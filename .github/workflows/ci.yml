@@ -54,6 +54,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Check generated protocol contracts
+        run: pnpm contracts:check
+
       - name: Test
         run: pnpm test
 

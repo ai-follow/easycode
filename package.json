@@ -9,6 +9,8 @@
     "dev:server": "pnpm --filter @easycode/relay-server dev",
     "dev:desktop": "pnpm --filter @easycode/desktop-agent dev",
     "dev:mobile": "pnpm --filter @easycode/mobile-web dev",
+    "contracts:generate": "pnpm --filter @easycode/protocol schema:generate && pnpm --filter @easycode/protocol openapi:generate",
+    "contracts:check": "pnpm --filter @easycode/protocol build && pnpm --filter @easycode/protocol schema:check && pnpm --filter @easycode/protocol openapi:check",
     "typecheck": "pnpm --filter @easycode/protocol build && pnpm -r typecheck",
     "test": "pnpm --filter @easycode/protocol build && pnpm -r test",
     "test:e2e": "pnpm build && node scripts/e2e-smoke.mjs",
