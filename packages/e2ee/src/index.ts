@@ -17,6 +17,17 @@ export const E2EE_PAYLOAD_SUITE = "aes-256-gcm";
 
 export type CleartextRelayPayload = Exclude<RelayPayload, EncryptedRelayPayload | KeyExchangePayload>;
 
+export const RELAY_PAYLOAD_KINDS_SENT_CLEAR = [
+  "ack",
+  "error",
+  "ping",
+  "key_exchange",
+  "encrypted_payload"
+] as const satisfies readonly RelayPayload["kind"][];
+
+export const shouldEncryptRelayPayload = (payload: RelayPayload): payload is CleartextRelayPayload =>
+  !RELAY_PAYLOAD_KINDS_SENT_CLEAR.includes(payload.kind as typeof RELAY_PAYLOAD_KINDS_SENT_CLEAR[number]);
+
 export type RelayPayloadKey = {
   keyId: string;
   key: CryptoKey;

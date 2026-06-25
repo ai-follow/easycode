@@ -1,5 +1,6 @@
 import type { SerializedRelayE2eeSession } from "@easycode/e2ee";
-import type { RelayPayload } from "@easycode/protocol";
+
+export { shouldEncryptRelayPayload as shouldEncryptPayload } from "@easycode/e2ee";
 
 export type StoredPairing = {
   serverUrl: string;
@@ -61,10 +62,3 @@ export const loadStoredE2eeSession = (
     return undefined;
   }
 };
-
-export const shouldEncryptPayload = (payload: RelayPayload): boolean =>
-  payload.kind !== "ack" &&
-  payload.kind !== "error" &&
-  payload.kind !== "ping" &&
-  payload.kind !== "key_exchange" &&
-  payload.kind !== "encrypted_payload";

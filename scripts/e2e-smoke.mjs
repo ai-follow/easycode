@@ -4,7 +4,7 @@ import { connect as createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
-import { RelayE2eeSession } from "../packages/e2ee/dist/index.js";
+import { RelayE2eeSession, shouldEncryptRelayPayload } from "../packages/e2ee/dist/index.js";
 import { PAIRING_REVOKED_CLOSE_CODE, PAIRING_REVOKED_CLOSE_REASON } from "../packages/protocol/dist/index.js";
 
 const root = new URL("..", import.meta.url);
@@ -361,15 +361,11 @@ async function sendMobile(mobile, pairId, payload, id = `env_${randomUUID()}`) {
     createdAt: new Date().toISOString(),
     payload
   };
-  if (mobile.e2ee.ready && shouldEncryptPayload(payload)) {
+  if (mobile.e2ee.ready && shouldEncryptRelayPayload(payload)) {
     envelope.payload = await mobile.e2ee.encryptEnvelopePayload(envelope, payload);
   }
   mobile.ws.send(JSON.stringify(envelope));
   return id;
-}
-
-function shouldEncryptPayload(payload) {
-  return !["ack", "error", "ping", "key_exchange", "encrypted_payload"].includes(payload.kind);
 }
 
 function countEnvelopes(envelopes, predicate) {

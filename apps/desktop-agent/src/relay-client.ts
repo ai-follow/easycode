@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
-import { RelayE2eeSession, type CleartextRelayPayload, type SerializedRelayE2eeSession } from "@easycode/e2ee";
+import {
+  RelayE2eeSession,
+  shouldEncryptRelayPayload,
+  type CleartextRelayPayload,
+  type SerializedRelayE2eeSession
+} from "@easycode/e2ee";
 import {
   CreatePairingResponseSchema,
   PAIRING_REVOKED_CLOSE_CODE,
@@ -187,7 +192,7 @@ export class DesktopRelayClient {
 
   private async sendPayload(payload: RelayPayload): Promise<void> {
     const e2ee = this.e2eeSession ? await this.e2eeSession : undefined;
-    if (!e2ee || !shouldEncryptPayload(payload)) {
+    if (!e2ee || !shouldEncryptRelayPayload(payload)) {
       this.sendEnvelope(this.createEnvelope(payload));
       return;
     }
@@ -356,13 +361,6 @@ export class DesktopRelayClient {
     this.reconnectTimer = undefined;
   }
 }
-
-const shouldEncryptPayload = (payload: RelayPayload): boolean =>
-  payload.kind !== "ack" &&
-  payload.kind !== "error" &&
-  payload.kind !== "ping" &&
-  payload.kind !== "key_exchange" &&
-  payload.kind !== "encrypted_payload";
 
 export const createPairing = async (serverUrl: string, relayToken?: string): Promise<CreatePairingResponse> => {
   const headers = new Headers({

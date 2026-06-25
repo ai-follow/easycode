@@ -12,6 +12,7 @@ import {
   generateRelayKeySecret,
   RelayE2eeSession,
   relayPayloadAad,
+  shouldEncryptRelayPayload,
   type CleartextRelayPayload
 } from "./index.js";
 
@@ -23,6 +24,37 @@ test("base64url helpers round trip bytes", () => {
   assert.equal(encoded.includes("/"), false);
   assert.equal(encoded.includes("="), false);
   assert.deepEqual(base64UrlDecode(encoded), bytes);
+});
+
+test("relay encryption predicate leaves transport control frames clear", () => {
+  assert.equal(shouldEncryptRelayPayload({ kind: "ack", refId: "env_1" }), false);
+  assert.equal(shouldEncryptRelayPayload({ kind: "error", message: "failed" }), false);
+  assert.equal(shouldEncryptRelayPayload({ kind: "ping", nonce: "nonce" }), false);
+  assert.equal(shouldEncryptRelayPayload({
+    kind: "key_exchange",
+    version: 1,
+    suite: "p256-hkdf-sha256-aes-256-gcm",
+    phase: "desktop_hello",
+    keyId: "key_test",
+    publicKey: "public"
+  }), false);
+  assert.equal(shouldEncryptRelayPayload({
+    kind: "encrypted_payload",
+    version: 1,
+    suite: "aes-256-gcm",
+    keyId: "key_test",
+    nonce: "nonce",
+    ciphertext: "ciphertext"
+  }), false);
+  assert.equal(shouldEncryptRelayPayload({
+    kind: "user_input",
+    sessionId: "session_1",
+    input: {
+      type: "text",
+      inputId: "input_1",
+      text: "hello"
+    }
+  }), true);
 });
 
 test("encrypts and decrypts a relay payload", async () => {

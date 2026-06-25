@@ -1,6 +1,11 @@
-import { RelayE2eeSession, type CleartextRelayPayload, type SerializedRelayE2eeSession } from "@easycode/e2ee";
+import {
+  RelayE2eeSession,
+  shouldEncryptRelayPayload,
+  type CleartextRelayPayload,
+  type SerializedRelayE2eeSession
+} from "@easycode/e2ee";
 import type { KeyExchangePayload, RelayEnvelope } from "@easycode/protocol";
-import { e2eeStorageKey, loadStoredE2eeSession, shouldEncryptPayload, type KeyValueStorage } from "./mobileStorage.js";
+import { e2eeStorageKey, loadStoredE2eeSession, type KeyValueStorage } from "./mobileStorage.js";
 
 export type MobileE2eeSessionStore = {
   load(pairId: string): SerializedRelayE2eeSession | undefined;
@@ -80,7 +85,7 @@ export class MobileE2eeSessionManager {
   }
 
   async prepareOutboundEnvelope(envelope: RelayEnvelope): Promise<RelayEnvelope> {
-    if (!shouldEncryptPayload(envelope.payload)) return envelope;
+    if (!shouldEncryptRelayPayload(envelope.payload)) return envelope;
 
     const session = this.session && this.pairId === envelope.pairId
       ? this.session
