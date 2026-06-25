@@ -3,6 +3,9 @@ import type { RelayStore } from "./store.js";
 
 type RequestHandlerOptions = {
   adminToken?: string;
+  heartbeatIntervalMs?: number;
+  serviceVersion?: string;
+  startedAt?: Date;
 };
 
 const jsonHeaders = {
@@ -41,7 +44,17 @@ export const createRequestHandler =
       }
 
       if (request.method === "GET" && url.pathname === "/health") {
-        sendJson(response, 200, { ok: true, ...store.getStats() });
+        sendJson(response, 200, healthPayload(store, options));
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/ready") {
+        sendJson(response, 200, {
+          ready: true,
+          checks: {
+            store: true
+          }
+        });
         return;
       }
 
@@ -82,4 +95,18 @@ const isAuthorized = (request: IncomingMessage, adminToken?: string): boolean =>
   const explicitToken = Array.isArray(headerToken) ? headerToken[0] : headerToken;
 
   return bearerToken === adminToken || explicitToken === adminToken;
+};
+
+const healthPayload = (store: RelayStore, options: RequestHandlerOptions) => {
+  const startedAt = options.startedAt ?? new Date();
+  return {
+    ok: true,
+    service: "easycode-relay",
+    version: options.serviceVersion ?? "0.1.0",
+    uptimeSeconds: Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000)),
+    startedAt: startedAt.toISOString(),
+    adminTokenConfigured: Boolean(options.adminToken),
+    heartbeatIntervalMs: options.heartbeatIntervalMs,
+    ...store.getStats()
+  };
 };

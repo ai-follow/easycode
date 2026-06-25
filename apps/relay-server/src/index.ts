@@ -7,9 +7,13 @@ import { RelayStore } from "./store.js";
 
 const port = Number(process.env.PORT ?? 8787);
 const heartbeatIntervalMs = parsePositiveInt(process.env.EASYCODE_WS_HEARTBEAT_MS, 30000);
+const startedAt = new Date();
 const store = new RelayStore();
 const server = createServer(createRequestHandler(store, {
-  adminToken: process.env.EASYCODE_RELAY_ADMIN_TOKEN
+  adminToken: process.env.EASYCODE_RELAY_ADMIN_TOKEN,
+  heartbeatIntervalMs,
+  serviceVersion: process.env.npm_package_version,
+  startedAt
 }));
 const wss = new WebSocketServer({ noServer: true });
 
