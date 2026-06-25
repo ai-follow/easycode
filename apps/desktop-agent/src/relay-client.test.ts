@@ -109,6 +109,7 @@ test("e2ee mode exchanges keys, encrypts outgoing payloads, and decrypts incomin
     await waitFor(() => decryptedByMobile.some((payload) => payload.kind === "desktop_status"), "encrypted desktop status");
     assert.equal(received.some((envelope) => envelope.payload.kind === "encrypted_payload"), true);
 
+    const restoredMobileE2ee = await RelayE2eeSession.restore(await mobileE2ee.serialize());
     const mobileInputEnvelope = {
       id: "env_mobile_input",
       pairId: "pair_test",
@@ -117,7 +118,7 @@ test("e2ee mode exchanges keys, encrypts outgoing payloads, and decrypts incomin
     };
     desktopSocket.send(JSON.stringify({
       ...mobileInputEnvelope,
-      payload: await mobileE2ee.encryptEnvelopePayload(mobileInputEnvelope, {
+      payload: await restoredMobileE2ee.encryptEnvelopePayload(mobileInputEnvelope, {
         kind: "user_input",
         sessionId: "session_test",
         input: {
