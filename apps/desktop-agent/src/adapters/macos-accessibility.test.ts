@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   buildConversationSnapshotFromAccessibility,
@@ -33,6 +34,30 @@ test("builds conversation messages from useful visible text", () => {
   assert.equal(messages[0]?.text, "build a relay");
   assert.equal(messages[1]?.role, "assistant");
   assert.equal(messages[1]?.text, "done");
+});
+
+test("combines standalone Cursor speaker labels with following message text", () => {
+  const elements = parseAccessibilityDump(
+    [
+      "AXStaticText\tstatic text\tExplorer\t\t\ttrue",
+      "AXStaticText\tstatic text\tYou\t\t\ttrue",
+      "AXStaticText\tstatic text\tAdd retry handling to the relay client\t\t\ttrue",
+      "AXStaticText\tstatic text\tCursor\t\t\ttrue",
+      "AXStaticText\tstatic text\tI added reconnect handling and preserved message ids.\t\t\ttrue",
+      "AXStaticText\tstatic text\tAsk anything\t\t\ttrue",
+      "AXStaticText\tstatic text\tPress Enter to send\t\t\ttrue"
+    ].join("\n")
+  );
+
+  const messages = extractMessages("cursor", "session_1", elements, "2026-01-01T00:00:00.000Z");
+
+  assert.deepEqual(
+    messages.map((message) => [message.role, message.text]),
+    [
+      ["user", "Add retry handling to the relay client"],
+      ["assistant", "I added reconnect handling and preserved message ids."]
+    ]
+  );
 });
 
 test("extracts client interaction options without interpreting risk", () => {
@@ -92,4 +117,28 @@ test("builds a full snapshot with waiting state when buttons are present", () =>
   assert.equal(snapshot.messages.length, 1);
   assert.equal(snapshot.pendingInteractions.length, 1);
   assert.equal(snapshot.state.status, "waiting_for_user");
+});
+
+test("parses Cursor-style confirmation fixture without standalone speaker noise", async () => {
+  const raw = await readFile(new URL("../../fixtures/cursor-accessibility-confirmation.txt", import.meta.url), "utf8");
+  const snapshot = buildConversationSnapshotFromAccessibility({
+    adapterId: "cursor",
+    sessionId: "session_fixture",
+    title: "Cursor - EasyCode",
+    capturedAt: "2026-01-01T00:00:00.000Z",
+    elements: parseAccessibilityDump(raw)
+  });
+
+  assert.equal(snapshot.state.status, "waiting_for_user");
+  assert.deepEqual(
+    snapshot.messages.map((message) => [message.role, message.text]),
+    [
+      ["user", "Update the relay client to retry unacknowledged envelopes."],
+      ["assistant", "I need approval before running pnpm test because it may take a while."]
+    ]
+  );
+  assert.deepEqual(
+    snapshot.pendingInteractions[0]?.options.map((option) => option.label),
+    ["Approve and run", "Reject", "Stop"]
+  );
 });

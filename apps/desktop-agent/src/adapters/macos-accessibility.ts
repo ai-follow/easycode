@@ -32,10 +32,16 @@ const INTERACTION_LABEL_PATTERN =
 const IGNORE_TEXT = new Set([
   "accounts",
   "activity bar",
+  "ask",
+  "ask anything",
+  "chat",
+  "composer",
   "debug",
   "extensions",
   "explorer",
   "files",
+  "new chat",
+  "new folder",
   "manage",
   "notifications",
   "problems",
@@ -106,16 +112,25 @@ export const extractMessages = (
 
   const seenTexts = new Set<string>();
   const messages: ClientMessage[] = [];
+  let pendingRole: ClientMessage["role"] | undefined;
 
   for (const text of candidates) {
+    const roleLabel = roleFromStandaloneLabel(text);
+    if (roleLabel) {
+      pendingRole = roleLabel;
+      continue;
+    }
+
     const normalizedKey = text.toLowerCase();
     if (seenTexts.has(normalizedKey)) continue;
     seenTexts.add(normalizedKey);
 
     const inferred = inferRole(text);
+    const role = pendingRole ?? inferred.role;
+    pendingRole = undefined;
     messages.push({
       id: `message_${fingerprint([adapterId, sessionId, inferred.text])}`,
-      role: inferred.role,
+      role,
       text: inferred.text,
       createdAt: capturedAt,
       raw: {
@@ -186,6 +201,7 @@ const isUsefulConversationText = (text: string): boolean => {
   if (text.length < 2) return false;
   if (text.length > 6000) return false;
   if (IGNORE_TEXT.has(text.toLowerCase())) return false;
+  if (/^(press|use)\s+.+\s+(to|for)\s+.+$/i.test(text)) return false;
   if (/^[\W_]+$/.test(text)) return false;
   return true;
 };
@@ -207,6 +223,13 @@ const inferRole = (text: string): Pick<ClientMessage, "role" | "text"> => {
   const body = match[2]?.trim() || text;
   if (label === "user" || label === "you" || label === "human") return { role: "user", text: body };
   return { role: "assistant", text: body };
+};
+
+const roleFromStandaloneLabel = (text: string): ClientMessage["role"] | undefined => {
+  const normalized = text.toLowerCase();
+  if (normalized === "user" || normalized === "you" || normalized === "human") return "user";
+  if (normalized === "assistant" || normalized === "cursor" || normalized === "claude" || normalized === "codex") return "assistant";
+  return undefined;
 };
 
 const splitEscapedFields = (line: string): string[] => line.split("\t").map(unescapeField);

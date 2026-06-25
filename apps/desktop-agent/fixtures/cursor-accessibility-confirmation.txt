@@ -1,0 +1,17 @@
+AXGroup	group	Activity Bar			true
+AXStaticText	static text	Explorer			true
+AXStaticText	static text	Search			true
+AXStaticText	static text	Source Control			true
+AXGroup	group	Chat			true
+AXStaticText	static text	You			true
+AXStaticText	static text	Update the relay client to retry unacknowledged envelopes.			true
+AXStaticText	static text	Cursor			true
+AXStaticText	static text	I need approval before running pnpm test because it may take a while.			true
+AXGroup	group	Composer			true
+AXStaticText	static text	Ask anything			true
+AXStaticText	static text	Press Enter to send			true
+AXButton	button	Approve and run			true
+AXButton	button	Reject			true
+AXButton	button	Stop			true
+AXButton	button	Run and Debug			true
+AXButton	button	Search			true
