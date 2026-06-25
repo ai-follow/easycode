@@ -65,6 +65,16 @@ export type RelayE2eeSessionOptions = {
   keyId?: string;
 };
 
+export type SerializedRelayE2eeSession = {
+  version: 1;
+  role: E2eeRole;
+  pairId: string;
+  keyId: string;
+  publicKey: string;
+  privateKeyJwk: JsonWebKey;
+  peerPublicKey?: string;
+};
+
 const keyInfo = new TextEncoder().encode("easycode relay payload encryption v1");
 
 export const generateRelayKeySecret = (): Uint8Array => {
@@ -80,7 +90,8 @@ export class RelayE2eeSession {
     private readonly role: E2eeRole,
     private readonly pairId: string,
     private readonly keyId: string,
-    private readonly keyPair: CryptoKeyPair
+    private readonly keyPair: CryptoKeyPair,
+    private peerPublicKey?: string
   ) {}
 
   static async create(options: RelayE2eeSessionOptions): Promise<RelayE2eeSession> {
@@ -90,6 +101,25 @@ export class RelayE2eeSession {
       options.keyId ?? defaultPayloadKeyId(options.pairId),
       await generateKeyExchangeKeyPair()
     );
+  }
+
+  static async restore(state: SerializedRelayE2eeSession): Promise<RelayE2eeSession> {
+    if (state.version !== E2EE_PAYLOAD_VERSION) {
+      throw new Error(`Unsupported relay E2EE session version: ${state.version}`);
+    }
+    const keyPair: CryptoKeyPair = {
+      privateKey: await importKeyExchangePrivateKey(state.privateKeyJwk),
+      publicKey: await importKeyExchangePublicKey(state.publicKey)
+    };
+    const session = new RelayE2eeSession(
+      state.role,
+      state.pairId,
+      state.keyId,
+      keyPair,
+      state.peerPublicKey
+    );
+    if (state.peerPublicKey) await session.derivePayloadKey(state.peerPublicKey);
+    return session;
   }
 
   get ready(): boolean {
@@ -116,12 +146,19 @@ export class RelayE2eeSession {
     if (parsed.phase !== expectedPhase) {
       throw new Error(`Unexpected key exchange phase for ${this.role}: ${parsed.phase}`);
     }
-    this.payloadKey = await deriveRelayPayloadKeyFromPeer({
-      privateKey: this.keyPair.privateKey,
-      peerPublicKey: parsed.publicKey,
+    await this.derivePayloadKey(parsed.publicKey);
+  }
+
+  async serialize(): Promise<SerializedRelayE2eeSession> {
+    return {
+      version: E2EE_PAYLOAD_VERSION,
+      role: this.role,
       pairId: this.pairId,
-      keyId: this.keyId
-    });
+      keyId: this.keyId,
+      publicKey: await exportKeyExchangePublicKey(this.keyPair.publicKey),
+      privateKeyJwk: await exportKeyExchangePrivateKey(this.keyPair.privateKey),
+      ...(this.peerPublicKey ? { peerPublicKey: this.peerPublicKey } : {})
+    };
   }
 
   async encryptEnvelopePayload(
@@ -145,6 +182,16 @@ export class RelayE2eeSession {
       aad: relayEnvelopeAad(envelope)
     });
   }
+
+  private async derivePayloadKey(peerPublicKey: string): Promise<void> {
+    this.peerPublicKey = peerPublicKey;
+    this.payloadKey = await deriveRelayPayloadKeyFromPeer({
+      privateKey: this.keyPair.privateKey,
+      peerPublicKey,
+      pairId: this.pairId,
+      keyId: this.keyId
+    });
+  }
 }
 
 export const generateKeyExchangeKeyPair = async (): Promise<CryptoKeyPair> => {
@@ -165,6 +212,9 @@ export const exportKeyExchangePublicKey = async (publicKey: CryptoKey): Promise<
   return base64UrlEncode(new Uint8Array(exported));
 };
 
+export const exportKeyExchangePrivateKey = async (privateKey: CryptoKey): Promise<JsonWebKey> =>
+  crypto.subtle.exportKey("jwk", privateKey);
+
 export const importKeyExchangePublicKey = async (publicKey: string): Promise<CryptoKey> =>
   crypto.subtle.importKey(
     "spki",
@@ -175,6 +225,18 @@ export const importKeyExchangePublicKey = async (publicKey: string): Promise<Cry
     },
     true,
     []
+  );
+
+export const importKeyExchangePrivateKey = async (privateKey: JsonWebKey): Promise<CryptoKey> =>
+  crypto.subtle.importKey(
+    "jwk",
+    privateKey,
+    {
+      name: "ECDH",
+      namedCurve: "P-256"
+    },
+    true,
+    ["deriveBits"]
   );
 
 export const createKeyExchangePayload = async (

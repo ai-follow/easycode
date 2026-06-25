@@ -105,8 +105,9 @@ To exercise the encrypted payload path, start the desktop agent with:
 EASYCODE_E2EE=1 pnpm dev:desktop -- --adapter mock --server http://localhost:8787
 ```
 
-The mobile web client answers the desktop `key_exchange` message automatically
-and encrypts user input after the in-memory E2EE session is ready.
+The mobile web client answers the desktop `key_exchange` message automatically,
+persists its E2EE state in local storage for browser reload recovery, and
+encrypts user input after the E2EE session is ready.
 
 ## Project layout
 
@@ -163,8 +164,8 @@ EASYCODE_REDIS_TEST_URL=redis://localhost:6379 pnpm --filter @easycode/relay-ser
 - The relay server has initial PostgreSQL persistence and Redis fanout support,
   but hosted deployment still needs Redis operational hardening and multi-node
   soak testing.
-- E2EE keys are currently kept in memory. Browser reloads or app restarts can
-  lose the key needed to decrypt old encrypted replay backlog items.
+- Mobile web E2EE state is stored in browser local storage for reload recovery;
+  desktop E2EE state is still process-local.
 - The memory store is suitable for local validation. PostgreSQL persists
   envelope replay data; Redis fanout handles live delivery across relay nodes.
 - Real desktop-client extraction is heuristic. The macOS adapter reads the

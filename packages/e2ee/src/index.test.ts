@@ -144,6 +144,41 @@ test("relay e2ee sessions exchange keys and bind payloads to envelope metadata",
   );
 });
 
+test("relay e2ee sessions restore persisted key state", async () => {
+  const desktop = await RelayE2eeSession.create({
+    role: "desktop",
+    pairId: "pair_test"
+  });
+  const mobile = await RelayE2eeSession.create({
+    role: "mobile",
+    pairId: "pair_test"
+  });
+
+  await mobile.handleKeyExchange(await desktop.createHello());
+  await desktop.handleKeyExchange(await mobile.createHello());
+  const restoredMobile = await RelayE2eeSession.restore(await mobile.serialize());
+
+  const envelope = {
+    id: "env_restored",
+    pairId: "pair_test",
+    source: "desktop" as const,
+    createdAt: "2026-01-01T00:00:00.000Z"
+  };
+  const encrypted = await desktop.encryptEnvelopePayload(envelope, {
+    kind: "ping",
+    nonce: "restored"
+  });
+
+  assert.equal(restoredMobile.ready, true);
+  assert.deepEqual(await restoredMobile.decryptEnvelopePayload({
+    ...envelope,
+    payload: encrypted
+  }), {
+    kind: "ping",
+    nonce: "restored"
+  });
+});
+
 test("relay e2ee sessions reject unexpected key exchange payloads", async () => {
   const desktop = await RelayE2eeSession.create({
     role: "desktop",

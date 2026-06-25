@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { RelayE2eeSession, type CleartextRelayPayload } from "@easycode/e2ee";
+import { RelayE2eeSession, type CleartextRelayPayload, type SerializedRelayE2eeSession } from "@easycode/e2ee";
 import {
   ClaimPairingResponseSchema,
   PAIRING_REVOKED_CLOSE_CODE,
@@ -81,7 +81,7 @@ export const App = () => {
     setServerUrl(stored.serverUrl);
     setPairId(stored.pairId);
     setMobileToken(stored.mobileToken);
-    connectSocket(stored.pairId, stored.mobileToken, stored.serverUrl);
+    void connectSocket(stored.pairId, stored.mobileToken, stored.serverUrl);
 
     return () => {
       if (typeof reconnectTimerRef.current === "number") window.clearTimeout(reconnectTimerRef.current);
@@ -115,19 +115,20 @@ export const App = () => {
         pairId: claimed.pairId,
         mobileToken: claimed.mobileToken
       });
-      connectSocket(claimed.pairId, claimed.mobileToken, serverUrl);
+      await connectSocket(claimed.pairId, claimed.mobileToken, serverUrl);
     } catch (caught) {
       setStatus("error");
       setError(caught instanceof Error ? caught.message : String(caught));
     }
   };
 
-  const connectSocket = (nextPairId: string, nextMobileToken: string, relayUrl = serverUrl) => {
+  const connectSocket = async (nextPairId: string, nextMobileToken: string, relayUrl = serverUrl) => {
     if (typeof reconnectTimerRef.current === "number") {
       window.clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = undefined;
     }
     setStatus("connecting");
+    await restoreE2eeSession(nextPairId);
     const rememberedSeq = Number(window.localStorage.getItem(lastSeqKey(nextPairId)) ?? "0");
     lastServerSeqRef.current = Number.isFinite(rememberedSeq) ? rememberedSeq : 0;
     const wsUrl = new URL("/v1/ws", relayUrl);
@@ -192,7 +193,7 @@ export const App = () => {
     const delayMs = Math.min(1000 * 2 ** (attempt - 1), 10000);
     reconnectTimerRef.current = window.setTimeout(() => {
       reconnectTimerRef.current = undefined;
-      connectSocket(nextPairId, nextMobileToken, relayUrl);
+      void connectSocket(nextPairId, nextMobileToken, relayUrl);
     }, delayMs);
   };
 
@@ -206,6 +207,7 @@ export const App = () => {
     if (envelope.payload.kind === "key_exchange") {
       const e2ee = await ensureE2eeSession(envelope.pairId);
       await e2ee.handleKeyExchange(envelope.payload);
+      await storeE2eeSession(e2ee);
       sendEnvelope({
         id: `env_${crypto.randomUUID()}`,
         pairId: envelope.pairId,
@@ -217,7 +219,7 @@ export const App = () => {
     }
 
     if (envelope.payload.kind === "encrypted_payload") {
-      const e2ee = e2eeRef.current;
+      const e2ee = await ensureE2eeSession(envelope.pairId);
       if (!e2ee?.ready) throw new Error("Received encrypted payload before mobile E2EE session was ready");
       envelope = {
         ...envelope,
@@ -481,6 +483,7 @@ export const App = () => {
       socketRef.current = null;
     }
     if (currentPairId) window.localStorage.removeItem(lastSeqKey(currentPairId));
+    if (currentPairId) window.localStorage.removeItem(e2eeStorageKey(currentPairId));
     window.localStorage.removeItem(pairingStorageKey);
     reconnectAttemptRef.current = 0;
     lastServerSeqRef.current = 0;
@@ -498,6 +501,8 @@ export const App = () => {
 
   const ensureE2eeSession = async (nextPairId: string): Promise<RelayE2eeSession> => {
     if (e2eeRef.current && e2eePairIdRef.current === nextPairId) return e2eeRef.current;
+    const restored = await restoreE2eeSession(nextPairId);
+    if (restored) return restored;
     const session = await RelayE2eeSession.create({
       role: "mobile",
       pairId: nextPairId
@@ -505,6 +510,27 @@ export const App = () => {
     e2eeRef.current = session;
     e2eePairIdRef.current = nextPairId;
     return session;
+  };
+
+  const restoreE2eeSession = async (nextPairId: string): Promise<RelayE2eeSession | undefined> => {
+    if (e2eeRef.current && e2eePairIdRef.current === nextPairId) return e2eeRef.current;
+    const stored = loadStoredE2eeSession(nextPairId);
+    if (!stored) return undefined;
+    try {
+      const session = await RelayE2eeSession.restore(stored);
+      e2eeRef.current = session;
+      e2eePairIdRef.current = nextPairId;
+      return session;
+    } catch {
+      window.localStorage.removeItem(e2eeStorageKey(nextPairId));
+      return undefined;
+    }
+  };
+
+  const storeE2eeSession = async (session: RelayE2eeSession): Promise<void> => {
+    const currentPairId = e2eePairIdRef.current || pairId;
+    if (!currentPairId) return;
+    window.localStorage.setItem(e2eeStorageKey(currentPairId), JSON.stringify(await session.serialize()));
   };
 
   return (
@@ -630,6 +656,7 @@ const dedupeInteractions = (interactions: InteractionRequest[]): InteractionRequ
 };
 
 const lastSeqKey = (pairId: string): string => `easycode:last-server-seq:${pairId}`;
+const e2eeStorageKey = (pairId: string): string => `easycode:e2ee-session:${pairId}`;
 
 const loadStoredPairing = (): StoredPairing | undefined => {
   try {
@@ -649,6 +676,27 @@ const loadStoredPairing = (): StoredPairing | undefined => {
 
 const storePairing = (pairing: StoredPairing): void => {
   window.localStorage.setItem(pairingStorageKey, JSON.stringify(pairing));
+};
+
+const loadStoredE2eeSession = (pairId: string): SerializedRelayE2eeSession | undefined => {
+  try {
+    const raw = window.localStorage.getItem(e2eeStorageKey(pairId));
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as Partial<SerializedRelayE2eeSession>;
+    if (
+      parsed.version !== 1 ||
+      parsed.role !== "mobile" ||
+      parsed.pairId !== pairId ||
+      !parsed.keyId ||
+      !parsed.publicKey ||
+      !parsed.privateKeyJwk
+    ) {
+      return undefined;
+    }
+    return parsed as SerializedRelayE2eeSession;
+  } catch {
+    return undefined;
+  }
 };
 
 const shouldEncryptPayload = (payload: RelayPayload): boolean =>

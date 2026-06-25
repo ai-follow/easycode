@@ -61,10 +61,9 @@ adapter path.
 The server treats payloads as opaque protocol messages. It may validate envelope
 shape, persist metadata, and fan out messages, but it must not interpret
 client-specific option labels such as approve, reject, continue, or stop.
-The protocol also accepts `encrypted_payload` envelopes. Those payloads expose
-only encryption metadata and ciphertext to the relay; desktop and mobile clients
-will need a separate end-to-end key exchange before the main app path can switch
-from cleartext payloads to encrypted payloads.
+The protocol accepts `key_exchange` and `encrypted_payload` envelopes. Encrypted
+payloads expose only encryption metadata and ciphertext to the relay; the relay
+does not need the derived payload key to sequence, store, or fan out envelopes.
 `@easycode/e2ee` owns the shared AES-GCM payload encryption helpers so desktop,
 mobile web, and future Flutter code use the same P-256 ECDH key exchange,
 HKDF key derivation, base64url encoding, and authenticated-data format.
@@ -97,6 +96,9 @@ storage after a successful claim. On socket close it reconnects with exponential
 backoff and includes the latest stored `afterSeq` cursor. It also keeps a
 bounded in-memory outbound queue and retries unacknowledged envelopes with the
 same id after reconnect.
+For E2EE sessions, mobile web stores its serialized ECDH state in local storage
+after the key exchange completes, so a browser reload can restore the payload
+key and decrypt encrypted replay backlog items for the same pairing.
 Browser WebSocket APIs cannot attach custom headers, so the mobile token travels
 in the WebSocket URL query. Desktop and other non-browser clients should send
 their pair token as an `Authorization: Bearer ...` header.
@@ -141,8 +143,8 @@ restarts.
 ## Production backlog
 
 - Harden Redis fanout for production multi-node deployments.
-- Persist or recover E2EE key state so mobile reloads and desktop restarts can
-  decrypt encrypted replay backlog items.
+- Persist desktop/native E2EE key state and move browser E2EE storage to a
+  stronger platform store when the app shell is available.
 - Add Tauri shell that embeds the desktop agent core and permissions UI.
 - Harden Cursor conversation extraction with resilient selectors and fixtures
   captured from real Cursor accessibility trees.

@@ -165,7 +165,11 @@ try {
 
   first.ws.close();
 
-  const replay = await connectMobile(serverUrl, pairId, mobileToken, seqAfterSnapshot, first.e2ee);
+  if (!first.rawReceived.some((envelope) => envelope.payload.kind === "encrypted_payload")) {
+    throw new Error("Expected encrypted payloads in the e2e smoke path");
+  }
+  const restoredMobileE2ee = await RelayE2eeSession.restore(await first.e2ee.serialize());
+  const replay = await connectMobile(serverUrl, pairId, mobileToken, seqAfterSnapshot, restoredMobileE2ee);
   await sleep(400);
   const replayedSeqs = replay.received.map((envelope) => envelope.serverSeq ?? 0);
   if (replayedSeqs.length === 0) throw new Error("Expected replayed envelopes after reconnect cursor");
