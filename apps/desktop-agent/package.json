@@ -19,6 +19,7 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@easycode/e2ee": "workspace:*",
     "@easycode/protocol": "workspace:*",
     "ws": "^8.18.2"
   },

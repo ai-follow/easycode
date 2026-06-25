@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { test } from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
-import type { RelayEnvelope } from "@easycode/protocol";
+import { RelayE2eeSession } from "@easycode/e2ee";
+import type { RelayEnvelope, RelayPayload } from "@easycode/protocol";
 import { DesktopRelayClient } from "./relay-client.js";
 
 test("retries unacknowledged envelopes with the same id after reconnect", async () => {
@@ -50,17 +51,118 @@ test("does not retry acknowledged envelopes after reconnect", async () => {
   }
 });
 
-const createTestClient = (serverUrl: string): DesktopRelayClient =>
+test("e2ee mode exchanges keys, encrypts outgoing payloads, and decrypts incoming payloads", async () => {
+  const received: RelayEnvelope[] = [];
+  const decryptedByMobile: RelayPayload[] = [];
+  const deliveredToDesktop: RelayEnvelope[] = [];
+  const mobileE2ee = await RelayE2eeSession.create({
+    role: "mobile",
+    pairId: "pair_test"
+  });
+  let desktopSocket: WebSocket | undefined;
+  let mobileHelloSent = false;
+
+  const harness = await createHarness(async (socket, envelope) => {
+    received.push(envelope);
+    desktopSocket = socket;
+
+    if (envelope.payload.kind === "key_exchange") {
+      await mobileE2ee.handleKeyExchange(envelope.payload);
+      return;
+    }
+
+    if (envelope.payload.kind === "encrypted_payload") {
+      decryptedByMobile.push(await mobileE2ee.decryptEnvelopePayload(envelope));
+    }
+  });
+  const client = createTestClient(harness.serverUrl, {
+    e2ee: true,
+    onEnvelope: (envelope) => {
+      deliveredToDesktop.push(envelope);
+    }
+  });
+
+  try {
+    await client.connect();
+    await waitFor(() => received.some((envelope) => envelope.payload.kind === "key_exchange"), "desktop key exchange hello");
+
+    client.send({
+      kind: "desktop_status",
+      targets: [],
+      sessions: [],
+      capabilities: {}
+    });
+    await sleep(50);
+    assert.equal(received.some((envelope) => envelope.payload.kind === "desktop_status"), false);
+
+    if (!desktopSocket) throw new Error("Harness did not capture the desktop socket");
+    const mobileHello: RelayEnvelope = {
+      id: "env_mobile_hello",
+      pairId: "pair_test",
+      source: "mobile",
+      createdAt: new Date().toISOString(),
+      payload: await mobileE2ee.createHello()
+    };
+    desktopSocket.send(JSON.stringify(mobileHello));
+    mobileHelloSent = true;
+
+    await waitFor(() => decryptedByMobile.some((payload) => payload.kind === "desktop_status"), "encrypted desktop status");
+    assert.equal(received.some((envelope) => envelope.payload.kind === "encrypted_payload"), true);
+
+    const mobileInputEnvelope = {
+      id: "env_mobile_input",
+      pairId: "pair_test",
+      source: "mobile" as const,
+      createdAt: new Date().toISOString()
+    };
+    desktopSocket.send(JSON.stringify({
+      ...mobileInputEnvelope,
+      payload: await mobileE2ee.encryptEnvelopePayload(mobileInputEnvelope, {
+        kind: "user_input",
+        sessionId: "session_test",
+        input: {
+          type: "text",
+          inputId: "input_test",
+          text: "encrypted hello"
+        }
+      })
+    }));
+
+    await waitFor(() => deliveredToDesktop.some((envelope) => envelope.payload.kind === "user_input"), "decrypted mobile input");
+    assert.equal(mobileHelloSent, true);
+    assert.deepEqual(deliveredToDesktop[0]?.payload, {
+      kind: "user_input",
+      sessionId: "session_test",
+      input: {
+        type: "text",
+        inputId: "input_test",
+        text: "encrypted hello"
+      }
+    });
+  } finally {
+    client.close();
+    await harness.close();
+  }
+});
+
+const createTestClient = (
+  serverUrl: string,
+  options: {
+    e2ee?: boolean;
+    onEnvelope?: (envelope: RelayEnvelope) => void | Promise<void>;
+  } = {}
+): DesktopRelayClient =>
   new DesktopRelayClient({
     serverUrl,
     pairId: "pair_test",
     desktopToken: "token_test",
     reconnectBaseMs: 10,
     reconnectMaxMs: 20,
-    onEnvelope: () => undefined
+    e2ee: options.e2ee,
+    onEnvelope: options.onEnvelope ?? (() => undefined)
   });
 
-async function createHarness(onEnvelope: (socket: WebSocket, envelope: RelayEnvelope) => void): Promise<{
+async function createHarness(onEnvelope: (socket: WebSocket, envelope: RelayEnvelope) => void | Promise<void>): Promise<{
   serverUrl: string;
   close: () => Promise<void>;
 }> {
@@ -75,7 +177,9 @@ async function createHarness(onEnvelope: (socket: WebSocket, envelope: RelayEnve
 
   wss.on("connection", (socket) => {
     socket.on("message", (raw) => {
-      onEnvelope(socket, JSON.parse(raw.toString()) as RelayEnvelope);
+      Promise.resolve(onEnvelope(socket, JSON.parse(raw.toString()) as RelayEnvelope)).catch((error) => {
+        socket.emit("error", error);
+      });
     });
   });
 

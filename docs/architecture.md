@@ -68,6 +68,9 @@ from cleartext payloads to encrypted payloads.
 `@easycode/e2ee` owns the shared AES-GCM payload encryption helpers so desktop,
 mobile web, and future Flutter code use the same P-256 ECDH key exchange,
 HKDF key derivation, base64url encoding, and authenticated-data format.
+The desktop relay client already has an optional E2EE path that waits for a
+mobile `key_exchange` response before encrypting queued business payloads. The
+option remains internal until the mobile client implements the same flow.
 
 Pairing creation can be protected with `EASYCODE_RELAY_ADMIN_TOKEN`. When set,
 desktop agents must send the same value as a bearer token or

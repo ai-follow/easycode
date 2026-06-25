@@ -156,6 +156,8 @@ EASYCODE_REDIS_TEST_URL=redis://localhost:6379 pnpm --filter @easycode/relay-ser
 - The protocol can carry encrypted payloads, but clients still send cleartext
   until the desktop/mobile key exchange and relay-client integration are
   implemented.
+- The desktop relay client has a tested optional E2EE mode; it is not exposed in
+  the CLI until the mobile client can complete the same handshake.
 - The memory store is suitable for local validation. PostgreSQL persists
   envelope replay data; Redis fanout handles live delivery across relay nodes.
 - Real desktop-client extraction is heuristic. The macOS adapter reads the
