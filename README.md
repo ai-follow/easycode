@@ -141,3 +141,11 @@ pnpm --filter @easycode/desktop-agent inspect -- --adapter cursor --json
 pnpm --filter @easycode/desktop-agent inspect -- --adapter cursor --raw --output cursor-accessibility.txt
 pnpm --filter @easycode/desktop-agent inspect -- --adapter cursor --input cursor-accessibility.txt --json
 ```
+
+Inspect output is redacted by default before it is printed or written to disk.
+Use `--no-redact` only for private local debugging after reviewing that the
+dump is safe to keep:
+
+```bash
+pnpm --filter @easycode/desktop-agent inspect -- --adapter cursor --raw --no-redact --output private-cursor-accessibility.txt
+```

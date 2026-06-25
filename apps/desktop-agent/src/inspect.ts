@@ -4,12 +4,14 @@ import { buildConversationSnapshotFromAccessibility, parseAccessibilityDump } fr
 import { discoverProcessWindows, dumpAccessibilityTree } from "./adapters/macos-automation.js";
 import type { AdapterName } from "./adapters/index.js";
 import { resolveMacAdapterConfig } from "./adapters/index.js";
+import { redactSensitiveText } from "./redaction.js";
 
 type InspectOptions = {
   adapterName: AdapterName;
   windowIndex: number;
   raw: boolean;
   json: boolean;
+  redact: boolean;
   inputPath?: string;
   outputPath?: string;
 };
@@ -28,6 +30,7 @@ const parseArgs = (): InspectOptions => {
     windowIndex: Number.isInteger(windowIndex) && windowIndex > 0 ? windowIndex : 1,
     raw: args.includes("--raw"),
     json: args.includes("--json"),
+    redact: !args.includes("--no-redact"),
     inputPath: args.includes("--input") ? get("--input", "") : undefined,
     outputPath: args.includes("--output") ? get("--output", "") : undefined
   };
@@ -37,20 +40,23 @@ const main = async (): Promise<void> => {
   const options = parseArgs();
   const config = resolveMacAdapterConfig(options.adapterName);
   const capture = await captureRawAccessibility(options, config);
+  const raw = options.redact ? redactSensitiveText(capture.raw) : capture.raw;
+  const title = options.redact ? redactSensitiveText(capture.title) : capture.title;
+  const target = options.redact ? redactSerializable(capture.target) : capture.target;
 
-  const elements = parseAccessibilityDump(capture.raw);
+  const elements = parseAccessibilityDump(raw);
   const snapshot = buildConversationSnapshotFromAccessibility({
     adapterId: config.id,
     sessionId: `inspect_${config.id}`,
-    title: capture.title,
+    title,
     elements
   });
 
   const result = options.raw
-    ? capture.raw
+    ? raw
     : options.json
-      ? JSON.stringify({ target: capture.target, elementCount: elements.length, snapshot }, null, 2)
-      : formatSummary(config.appName, capture.title, elements.length, snapshot.messages.length, snapshot.pendingInteractions.length);
+      ? JSON.stringify({ target, elementCount: elements.length, snapshot }, null, 2)
+      : formatSummary(config.appName, title, elements.length, snapshot.messages.length, snapshot.pendingInteractions.length, options.redact);
 
   if (options.outputPath) {
     await writeFile(options.outputPath, result, "utf8");
@@ -66,7 +72,8 @@ const formatSummary = (
   title: string,
   elementCount: number,
   messageCount: number,
-  interactionCount: number
+  interactionCount: number,
+  redact: boolean
 ): string =>
   [
     `App: ${appName}`,
@@ -75,8 +82,19 @@ const formatSummary = (
     `Parsed messages: ${messageCount}`,
     `Parsed interaction requests: ${interactionCount}`,
     "",
+    redact
+      ? "Inspect output is redacted by default. Use --no-redact only for private local debugging."
+      : "Redaction disabled. Do not share this output unless you have reviewed it.",
     "Use --json for parsed snapshot details, --raw --output fixture.txt for a raw dump, or --input fixture.txt to replay one."
   ].join("\n");
+
+const redactSerializable = <T>(value: T): T => {
+  try {
+    return JSON.parse(redactSensitiveText(JSON.stringify(value))) as T;
+  } catch {
+    return value;
+  }
+};
 
 const captureRawAccessibility = async (
   options: InspectOptions,
