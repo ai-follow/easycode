@@ -10,6 +10,8 @@ device and relays user input back to the selected desktop client.
 - GitHub Actions CI for typecheck, tests, and production builds.
 - Automated relay + mock desktop + simulated mobile e2e smoke test.
 - Shared protocol package with typed relay envelopes and client adapter models.
+- Protocol support for opaque encrypted relay payloads, ready for a later
+  desktop/mobile end-to-end key exchange.
 - WebSocket relay server with memory and PostgreSQL stores, per-pair server
   sequence numbers, replay backlog, and reconnect cursors.
 - Desktop agent core with a complete mock adapter for end-to-end validation.
@@ -148,6 +150,8 @@ EASYCODE_REDIS_TEST_URL=redis://localhost:6379 pnpm --filter @easycode/relay-ser
 - The relay server has initial PostgreSQL persistence and Redis fanout support,
   but hosted deployment still needs Redis operational hardening and multi-node
   soak testing.
+- The protocol can carry encrypted payloads, but clients still send cleartext
+  until the desktop/mobile key exchange is implemented.
 - The memory store is suitable for local validation. PostgreSQL persists
   envelope replay data; Redis fanout handles live delivery across relay nodes.
 - Real desktop-client extraction is heuristic. The macOS adapter reads the

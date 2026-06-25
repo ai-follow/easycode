@@ -61,6 +61,10 @@ adapter path.
 The server treats payloads as opaque protocol messages. It may validate envelope
 shape, persist metadata, and fan out messages, but it must not interpret
 client-specific option labels such as approve, reject, continue, or stop.
+The protocol also accepts `encrypted_payload` envelopes. Those payloads expose
+only encryption metadata and ciphertext to the relay; desktop and mobile clients
+will need a separate end-to-end key exchange before the main app path can switch
+from cleartext payloads to encrypted payloads.
 
 Pairing creation can be protected with `EASYCODE_RELAY_ADMIN_TOKEN`. When set,
 desktop agents must send the same value as a bearer token or

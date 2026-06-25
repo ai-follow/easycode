@@ -132,6 +132,17 @@ export const ConversationSnapshotSchema = z.object({
 });
 export type ConversationSnapshot = z.infer<typeof ConversationSnapshotSchema>;
 
+export const EncryptedRelayPayloadSchema = z.object({
+  kind: z.literal("encrypted_payload"),
+  version: z.literal(1),
+  suite: z.enum(["xchacha20poly1305-ietf", "aes-256-gcm"]),
+  keyId: z.string().min(1),
+  nonce: z.string().min(1),
+  ciphertext: z.string().min(1),
+  aad: z.string().min(1).optional()
+});
+export type EncryptedRelayPayload = z.infer<typeof EncryptedRelayPayloadSchema>;
+
 export const RelayPayloadSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("desktop_status"),
@@ -166,7 +177,8 @@ export const RelayPayloadSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("ping"),
     nonce: z.string().min(1)
-  })
+  }),
+  EncryptedRelayPayloadSchema
 ]);
 export type RelayPayload = z.infer<typeof RelayPayloadSchema>;
 
