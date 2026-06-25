@@ -8,6 +8,7 @@ device and relays user input back to the selected desktop client.
 ## What is implemented now
 
 - GitHub Actions CI for typecheck, tests, and production builds.
+- Automated relay + mock desktop + simulated mobile e2e smoke test.
 - Shared protocol package with typed relay envelopes and client adapter models.
 - WebSocket relay server with an in-memory pairing flow, per-pair server
   sequence numbers, replay backlog, and reconnect cursors.
@@ -25,6 +26,7 @@ device and relays user input back to the selected desktop client.
 ```bash
 pnpm install
 pnpm build
+pnpm test:e2e
 pnpm dev:server
 ```
 

@@ -36,3 +36,6 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: E2E smoke test
+        run: pnpm test:e2e
