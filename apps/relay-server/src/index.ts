@@ -122,8 +122,12 @@ const handleConnection = async (ws: WebSocket, pairId: string, role: DeviceRole,
       }
 
       const accepted = await store.acceptEnvelope(envelope);
-      if (accepted.duplicate) return;
+      if (accepted.duplicate) {
+        ws.send(JSON.stringify(serverAck(pairId, envelope.id)));
+        return;
+      }
       if (!accepted.envelope) return;
+      ws.send(JSON.stringify(serverAck(pairId, envelope.id)));
       for (const recipient of accepted.recipients) recipient.send(accepted.envelope);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -193,6 +197,17 @@ const serverError = (pairId: string, message: string, refId?: string): RelayEnve
   payload: {
     kind: "error",
     message,
+    refId
+  }
+});
+
+const serverAck = (pairId: string, refId: string): RelayEnvelope => ({
+  id: `server_${randomUUID()}`,
+  pairId,
+  source: "server",
+  createdAt: new Date().toISOString(),
+  payload: {
+    kind: "ack",
     refId
   }
 });

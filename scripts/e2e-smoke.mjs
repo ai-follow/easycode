@@ -73,7 +73,7 @@ try {
     "relay source mismatch error"
   );
 
-  sendMobile(first.ws, pairId, {
+  const textEnvelopeId = sendMobile(first.ws, pairId, {
     kind: "user_input",
     sessionId,
     input: {
@@ -82,6 +82,11 @@ try {
       text: "hello from e2e smoke"
     }
   });
+  await waitFor(
+    first.received,
+    (envelope) => envelope.payload.kind === "ack" && envelope.payload.refId === textEnvelopeId,
+    "relay ack for text input"
+  );
 
   await waitFor(
     first.received,
@@ -259,15 +264,17 @@ function websocketUpgradeStatus(serverUrl, origin, timeoutMs = 5000) {
 }
 
 function sendMobile(ws, pairId, payload) {
+  const id = `env_${randomUUID()}`;
   ws.send(
     JSON.stringify({
-      id: `env_${randomUUID()}`,
+      id,
       pairId,
       source: "mobile",
       createdAt: new Date().toISOString(),
       payload
     })
   );
+  return id;
 }
 
 function waitFor(received, predicate, label, timeoutMs = 5000) {
