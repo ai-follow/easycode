@@ -143,7 +143,6 @@ class _RelayScreenState extends State<RelayScreen> {
       'inputId': 'input_${DateTime.now().microsecondsSinceEpoch}',
       'requestId': request['id'],
       'optionId': option['id'],
-      'value': option['value'],
     });
     setState(() {});
   }

@@ -159,8 +159,7 @@ try {
       type: "interaction_response",
       inputId: `input_${randomUUID()}`,
       requestId: interaction.id,
-      optionId: option.id,
-      value: option.value
+      optionId: option.id
     }
   });
 

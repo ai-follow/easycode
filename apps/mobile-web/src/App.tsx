@@ -326,7 +326,7 @@ export const App = () => {
     if (sent) setDraft("");
   };
 
-  const sendInteractionResponse = async (request: InteractionRequest, optionId: string, value: unknown) => {
+  const sendInteractionResponse = async (request: InteractionRequest, optionId: string) => {
     if (!selectedSessionId) return;
     const sent = await sendPayload({
       kind: "user_input",
@@ -335,8 +335,7 @@ export const App = () => {
         type: "interaction_response",
         inputId: `input_${crypto.randomUUID()}`,
         requestId: request.id,
-        optionId,
-        value
+        optionId
       }
     });
     if (!sent) return;
@@ -460,7 +459,7 @@ export const App = () => {
                 <p>{request.text}</p>
                 <div className="options">
                   {request.options.map((option: InteractionRequest["options"][number]) => (
-                    <button key={option.id} type="button" onClick={() => sendInteractionResponse(request, option.id, option.value)}>
+                    <button key={option.id} type="button" onClick={() => sendInteractionResponse(request, option.id)}>
                       {option.label}
                     </button>
                   ))}
