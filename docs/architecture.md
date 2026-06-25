@@ -111,9 +111,9 @@ The relay store interface is asynchronous even though the current implementation
 is in-memory. This keeps HTTP handlers and WebSocket upgrade/message paths ready
 for PostgreSQL and Redis drivers without changing the relay protocol.
 
-PostgreSQL should own durable pairing identity, hashed pair tokens, one-time
-pairing codes, sequence allocation, and persisted envelope metadata. The initial
-schema lives in `infra/postgres/001_initial_relay.sql`.
+The initial PostgreSQL store owns durable pairing identity, hashed pair tokens,
+one-time pairing codes, sequence allocation, and persisted envelope metadata.
+The initial schema lives in `infra/postgres/001_initial_relay.sql`.
 
 Redis should own low-latency runtime coordination: short reconnect backlog,
 dedupe sets for recent envelope ids, active socket fan-out hints, and later
@@ -122,8 +122,8 @@ source of truth when Redis evicts data or restarts.
 
 ## Production backlog
 
-- Implement PostgreSQL and Redis relay store drivers behind the async store
-  contract.
+- Add database-backed integration tests, migration automation, and Redis runtime
+  coordination behind the async store contract.
 - Add end-to-end encryption for envelope payloads after the pairing handshake.
 - Add Tauri shell that embeds the desktop agent core and permissions UI.
 - Harden Cursor conversation extraction with resilient selectors and fixtures

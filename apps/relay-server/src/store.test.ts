@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { RelayEnvelope } from "@easycode/protocol";
-import { createRelayStore, MemoryRelayStore } from "./store.js";
+import { createRelayStore, MemoryRelayStore, PostgresRelayStore } from "./store.js";
 
 test("assigns server sequence numbers and filters backlog by cursor", async () => {
   const store = new MemoryRelayStore();
@@ -151,10 +151,14 @@ test("revokes a pairing with a desktop or mobile token", async () => {
   assert.equal(await store.revokePairing(pairing.pairId, claim.mobileToken), false);
 });
 
-test("creates the configured relay store driver", () => {
+test("creates the configured relay store driver", async () => {
   assert.ok(createRelayStore() instanceof MemoryRelayStore);
   assert.ok(createRelayStore("memory") instanceof MemoryRelayStore);
-  assert.throws(() => createRelayStore("postgres"), /Unsupported relay store driver "postgres"/);
+  assert.throws(() => createRelayStore("postgres"), /requires EASYCODE_POSTGRES_URL/);
+  const postgresStore = createRelayStore("postgres", { postgresUrl: "postgres://easycode:easycode@localhost:5432/easycode" });
+  assert.ok(postgresStore instanceof PostgresRelayStore);
+  await postgresStore.close?.();
+  assert.throws(() => createRelayStore("redis"), /Unsupported relay store driver "redis"/);
 });
 
 const envelope = (pairId: string, id: string): RelayEnvelope => ({

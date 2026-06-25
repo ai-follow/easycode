@@ -61,9 +61,11 @@ Use `/health` for diagnostics and `/ready` for container readiness probes.
 Set `EASYCODE_ALLOWED_ORIGINS` to a comma-separated allowlist for hosted mobile
 web clients; the default is `*` for local development. The allowlist is applied
 to HTTP CORS and browser WebSocket Origin headers.
-Set `EASYCODE_RELAY_STORE=memory` to select the current in-memory relay store.
-The store is behind an interface so PostgreSQL/Redis-backed drivers can replace
-it without changing the HTTP or WebSocket protocol layers.
+Set `EASYCODE_RELAY_STORE=memory` for local in-memory state, or
+`EASYCODE_RELAY_STORE=postgres` with `EASYCODE_POSTGRES_URL` for the initial
+durable PostgreSQL-backed store. The store is behind an interface so Redis and
+other runtime coordination drivers can be added without changing the HTTP or
+WebSocket protocol layers.
 
 The desktop agent prints a pairing code. In another terminal:
 
@@ -110,14 +112,15 @@ docker compose up --build relay
 
 Use the same `EASYCODE_RELAY_ADMIN_TOKEN` value when starting a desktop agent
 against that relay.
-The compose file also starts PostgreSQL and Redis so the durable relay driver
-can be implemented against stable local service names. The current server still
-defaults to `EASYCODE_RELAY_STORE=memory`.
+The compose file also starts PostgreSQL and Redis with stable local service
+names. The relay still defaults to `EASYCODE_RELAY_STORE=memory`; set
+`EASYCODE_RELAY_STORE=postgres` to exercise the initial durable store.
 
 ## Current limitations
 
-- The relay server currently ships only the `memory` store driver. PostgreSQL
-  and Redis adapters should replace it before a hosted deployment.
+- The relay server has an initial PostgreSQL store driver, but hosted
+  deployment still needs database integration tests, migration automation, and
+  Redis-backed runtime coordination.
 - Reconnect recovery is implemented with an in-memory backlog. It is suitable
   for local validation, but production still needs durable storage.
 - Real desktop-client extraction is heuristic. The macOS adapter reads the

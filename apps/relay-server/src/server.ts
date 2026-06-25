@@ -183,6 +183,7 @@ export const createRelayServer = (options: RelayServerOptions): RelayServerRunti
       for (const client of wss.clients) client.close();
       await closeWebSocketServer(wss);
       await closeHttpServer(server);
+      await options.store.close?.();
     }
   };
 };

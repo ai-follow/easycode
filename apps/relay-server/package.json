@@ -15,9 +15,11 @@
   },
   "dependencies": {
     "@easycode/protocol": "workspace:*",
+    "pg": "^8.22.0",
     "ws": "^8.18.2"
   },
   "devDependencies": {
+    "@types/pg": "^8.20.0",
     "@types/ws": "^8.18.1",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"
