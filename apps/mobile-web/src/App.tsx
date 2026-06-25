@@ -1,5 +1,4 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { RelayE2eeSession, type CleartextRelayPayload } from "@easycode/e2ee";
 import {
   ClaimPairingResponseSchema,
   PAIRING_REVOKED_CLOSE_CODE,
@@ -10,15 +9,13 @@ import {
   type RelayPayload
 } from "@easycode/protocol";
 import { buildMobileWebSocketUrl, nextReconnectAttempt, reconnectDelayMs } from "./mobileConnection.js";
+import { createMobileE2eeSessionStore, MobileE2eeSessionManager } from "./mobileE2eeSession.js";
 import { MobileOutbox } from "./mobileOutbox.js";
 import { applyMobileRelayPayload, emptyMobileRelayState, removePendingInteraction } from "./mobileRelayState.js";
 import {
-  e2eeStorageKey,
   lastSeqKey,
-  loadStoredE2eeSession,
   loadStoredPairing,
   pairingStorageKey,
-  shouldEncryptPayload,
   storePairing
 } from "./mobileStorage.js";
 
@@ -42,8 +39,11 @@ export const App = () => {
   const reconnectTimerRef = useRef<number | undefined>(undefined);
   const reconnectAttemptRef = useRef(0);
   const outboxRef = useRef(new MobileOutbox(mobileSendQueueLimit));
-  const e2eeRef = useRef<RelayE2eeSession | null>(null);
-  const e2eePairIdRef = useRef("");
+  const e2eeManagerRef = useRef<MobileE2eeSessionManager | null>(null);
+  if (!e2eeManagerRef.current) {
+    e2eeManagerRef.current = new MobileE2eeSessionManager(createMobileE2eeSessionStore(window.localStorage));
+  }
+  const e2eeManager = e2eeManagerRef.current;
 
   const { sessions, selectedSessionId } = mobileState;
   const selected = selectedSessionId ? sessions[selectedSessionId] : undefined;
@@ -120,7 +120,7 @@ export const App = () => {
       reconnectTimerRef.current = undefined;
     }
     setStatus("connecting");
-    await restoreE2eeSession(nextPairId);
+    await e2eeManager.restore(nextPairId);
     const rememberedSeq = Number(window.localStorage.getItem(lastSeqKey(nextPairId)) ?? "0");
     lastServerSeqRef.current = Number.isFinite(rememberedSeq) ? rememberedSeq : 0;
     const wsUrl = buildMobileWebSocketUrl({
@@ -197,25 +197,21 @@ export const App = () => {
 
   const applyEnvelope = async (envelope: RelayEnvelope) => {
     if (envelope.payload.kind === "key_exchange") {
-      const e2ee = await ensureE2eeSession(envelope.pairId);
-      await e2ee.handleKeyExchange(envelope.payload);
-      await storeE2eeSession(e2ee);
+      const reply = await e2eeManager.handleKeyExchange(envelope.pairId, envelope.payload);
       sendEnvelope({
         id: `env_${crypto.randomUUID()}`,
         pairId: envelope.pairId,
         source: "mobile",
         createdAt: new Date().toISOString(),
-        payload: await e2ee.createHello()
+        payload: reply
       });
       return;
     }
 
     if (envelope.payload.kind === "encrypted_payload") {
-      const e2ee = await ensureE2eeSession(envelope.pairId);
-      if (!e2ee?.ready) throw new Error("Received encrypted payload before mobile E2EE session was ready");
       envelope = {
         ...envelope,
-        payload: await e2ee.decryptEnvelopePayload(envelope)
+        payload: await e2eeManager.decryptEnvelopePayload(envelope)
       };
     }
 
@@ -275,12 +271,7 @@ export const App = () => {
   };
 
   const prepareOutboundEnvelope = async (envelope: RelayEnvelope): Promise<RelayEnvelope> => {
-    const e2ee = e2eeRef.current;
-    if (!e2ee?.ready || !shouldEncryptPayload(envelope.payload)) return envelope;
-    return {
-      ...envelope,
-      payload: await e2ee.encryptEnvelopePayload(envelope, envelope.payload as CleartextRelayPayload)
-    };
+    return e2eeManager.prepareOutboundEnvelope(envelope);
   };
 
   const sendEnvelope = (envelope: RelayEnvelope) => {
@@ -384,52 +375,16 @@ export const App = () => {
       socketRef.current = null;
     }
     if (currentPairId) window.localStorage.removeItem(lastSeqKey(currentPairId));
-    if (currentPairId) window.localStorage.removeItem(e2eeStorageKey(currentPairId));
+    e2eeManager.forget(currentPairId);
     window.localStorage.removeItem(pairingStorageKey);
     reconnectAttemptRef.current = 0;
     lastServerSeqRef.current = 0;
-    e2eeRef.current = null;
-    e2eePairIdRef.current = "";
     outboxRef.current.clear();
     updatePendingOutboundCount();
     setPairId("");
     setMobileToken("");
     setMobileState(emptyMobileRelayState());
     setDraft("");
-  };
-
-  const ensureE2eeSession = async (nextPairId: string): Promise<RelayE2eeSession> => {
-    if (e2eeRef.current && e2eePairIdRef.current === nextPairId) return e2eeRef.current;
-    const restored = await restoreE2eeSession(nextPairId);
-    if (restored) return restored;
-    const session = await RelayE2eeSession.create({
-      role: "mobile",
-      pairId: nextPairId
-    });
-    e2eeRef.current = session;
-    e2eePairIdRef.current = nextPairId;
-    return session;
-  };
-
-  const restoreE2eeSession = async (nextPairId: string): Promise<RelayE2eeSession | undefined> => {
-    if (e2eeRef.current && e2eePairIdRef.current === nextPairId) return e2eeRef.current;
-    const stored = loadStoredE2eeSession(window.localStorage, nextPairId);
-    if (!stored) return undefined;
-    try {
-      const session = await RelayE2eeSession.restore(stored);
-      e2eeRef.current = session;
-      e2eePairIdRef.current = nextPairId;
-      return session;
-    } catch {
-      window.localStorage.removeItem(e2eeStorageKey(nextPairId));
-      return undefined;
-    }
-  };
-
-  const storeE2eeSession = async (session: RelayE2eeSession): Promise<void> => {
-    const currentPairId = e2eePairIdRef.current || pairId;
-    if (!currentPairId) return;
-    window.localStorage.setItem(e2eeStorageKey(currentPairId), JSON.stringify(await session.serialize()));
   };
 
   return (
