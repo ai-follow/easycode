@@ -69,9 +69,12 @@ export class DesktopRelayClient {
     wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
     wsUrl.searchParams.set("pairId", this.pairId);
     wsUrl.searchParams.set("role", "desktop");
-    wsUrl.searchParams.set("token", this.desktopToken);
 
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(wsUrl, {
+      headers: {
+        authorization: `Bearer ${this.desktopToken}`
+      }
+    });
     this.ws = ws;
 
     this.connecting = new Promise<void>((resolve, reject) => {

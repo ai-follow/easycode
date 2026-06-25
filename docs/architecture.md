@@ -76,6 +76,9 @@ transport cursor, not a business-level acknowledgment.
 The mobile web client persists its relay URL and mobile pairing token in local
 storage after a successful claim. On socket close it reconnects with exponential
 backoff and includes the latest stored `afterSeq` cursor.
+Browser WebSocket APIs cannot attach custom headers, so the mobile token travels
+in the WebSocket URL query. Desktop and other non-browser clients should send
+their pair token as an `Authorization: Bearer ...` header.
 
 The relay sends WebSocket heartbeat pings and terminates clients that do not
 respond by the next interval. This lets desktop and mobile clients fall back to

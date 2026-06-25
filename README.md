@@ -73,6 +73,9 @@ revoke the relay pairing.
 If a pairing is revoked by either device, existing relay sockets are closed with
 the shared `PAIRING_REVOKED_CLOSE_CODE`, and clients stop reconnecting with the
 invalid credentials.
+The desktop agent sends its WebSocket pair token in an `Authorization` header.
+The mobile web client sends the mobile token in the WebSocket URL because
+browsers do not allow custom WebSocket headers.
 On Android Chrome, use the browser install prompt or "Add to Home screen" after
 opening the mobile web URL.
 

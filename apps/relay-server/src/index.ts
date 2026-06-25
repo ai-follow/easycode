@@ -61,7 +61,7 @@ const handleUpgrade = async (
 
   const pairId = url.searchParams.get("pairId") ?? "";
   const roleResult = DeviceRoleSchema.safeParse(url.searchParams.get("role"));
-  const token = url.searchParams.get("token") ?? "";
+  const token = upgradeAuthToken(request, url);
   const afterSeq = parseOptionalPositiveInt(url.searchParams.get("afterSeq"));
   const origin = headerValue(request.headers.origin);
 
@@ -170,6 +170,12 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 }
 
 const headerValue = (value: string | string[] | undefined): string | undefined => Array.isArray(value) ? value[0] : value;
+
+const upgradeAuthToken = (request: IncomingMessage, url: URL): string => {
+  const authorization = headerValue(request.headers.authorization) ?? "";
+  const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
+  return bearer ?? headerValue(request.headers["x-easycode-relay-token"]) ?? url.searchParams.get("token") ?? "";
+};
 
 const serverError = (pairId: string, message: string, refId?: string): RelayEnvelope => ({
   id: `server_${randomUUID()}`,
