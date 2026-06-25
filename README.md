@@ -115,6 +115,15 @@ against that relay.
 The compose file also starts PostgreSQL and Redis with stable local service
 names. The relay still defaults to `EASYCODE_RELAY_STORE=memory`; set
 `EASYCODE_RELAY_STORE=postgres` to exercise the initial durable store.
+Apply PostgreSQL migrations explicitly before using that store:
+
+```bash
+EASYCODE_POSTGRES_URL=postgres://easycode:easycode@localhost:5432/easycode pnpm --filter @easycode/relay-server migrate:postgres
+```
+
+For containerized local runs, `EASYCODE_POSTGRES_MIGRATE=true` lets the relay
+apply pending PostgreSQL migrations at startup when
+`EASYCODE_RELAY_STORE=postgres`.
 The PostgreSQL integration test is skipped by default. Run it against a database
 that has `infra/postgres/001_initial_relay.sql` applied:
 

@@ -20,6 +20,7 @@ RUN pnpm install --frozen-lockfile
 
 COPY packages/protocol packages/protocol
 COPY apps/relay-server apps/relay-server
+COPY infra/postgres infra/postgres
 
 RUN pnpm --filter @easycode/protocol build && pnpm --filter @easycode/relay-server build
 
