@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { createServer } from "node:net";
-import { randomUUID } from "node:crypto";
+import { connect as createConnection, createServer } from "node:net";
+import { randomBytes, randomUUID } from "node:crypto";
 import { PAIRING_REVOKED_CLOSE_CODE, PAIRING_REVOKED_CLOSE_REASON } from "../packages/protocol/dist/index.js";
 
 const root = new URL("..", import.meta.url);
@@ -12,9 +12,15 @@ const processes = [];
 try {
   const relay = spawnManaged("relay", "node", ["apps/relay-server/dist/index.js"], {
     PORT: String(port),
-    EASYCODE_RELAY_ADMIN_TOKEN: relayAdminToken
+    EASYCODE_RELAY_ADMIN_TOKEN: relayAdminToken,
+    EASYCODE_ALLOWED_ORIGINS: "https://allowed.example"
   });
   await relay.waitForOutput(/listening/);
+
+  const deniedOriginStatus = await websocketUpgradeStatus(serverUrl, "https://denied.example");
+  if (deniedOriginStatus !== 403) {
+    throw new Error(`Expected denied WebSocket Origin to return 403, got ${deniedOriginStatus}`);
+  }
 
   const unauthorizedPairing = await fetch(`${serverUrl}/v1/pairings`, {
     method: "POST"
@@ -191,6 +197,45 @@ async function connectMobile(serverUrl, pairId, mobileToken, afterSeq = 0) {
   });
 
   return { ws, received };
+}
+
+function websocketUpgradeStatus(serverUrl, origin, timeoutMs = 5000) {
+  const url = new URL("/v1/ws?pairId=pair_origin_check&role=mobile&token=wrong", serverUrl);
+  const port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
+  const host = url.hostname;
+  const key = randomBytes(16).toString("base64");
+
+  return new Promise((resolve, reject) => {
+    const socket = createConnection(port, host, () => {
+      socket.write(
+        [
+          `GET ${url.pathname}${url.search} HTTP/1.1`,
+          `Host: ${url.host}`,
+          "Connection: Upgrade",
+          "Upgrade: websocket",
+          "Sec-WebSocket-Version: 13",
+          `Sec-WebSocket-Key: ${key}`,
+          `Origin: ${origin}`,
+          "",
+          ""
+        ].join("\r\n")
+      );
+    });
+
+    let response = "";
+    socket.setTimeout(timeoutMs, () => {
+      socket.destroy();
+      reject(new Error(`Timed out waiting for WebSocket upgrade status from ${url}`));
+    });
+    socket.on("data", (chunk) => {
+      response += chunk.toString("utf8");
+      const status = response.match(/^HTTP\/1\.1\s+(\d{3})/);
+      if (!status?.[1]) return;
+      socket.end();
+      resolve(Number(status[1]));
+    });
+    socket.on("error", reject);
+  });
 }
 
 function sendMobile(ws, pairId, payload) {
