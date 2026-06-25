@@ -1,0 +1,11 @@
+services:
+  relay:
+    build:
+      context: .
+      dockerfile: apps/relay-server/Dockerfile
+    ports:
+      - "${PORT:-8787}:8787"
+    environment:
+      PORT: 8787
+      EASYCODE_RELAY_ADMIN_TOKEN: ${EASYCODE_RELAY_ADMIN_TOKEN:-change-me}
+      EASYCODE_WS_HEARTBEAT_MS: ${EASYCODE_WS_HEARTBEAT_MS:-30000}

@@ -70,6 +70,18 @@ apps/mobile-flutter      Flutter app skeleton for native Android/iOS
 docs/architecture.md     Architecture notes and extension points
 ```
 
+## Relay Docker
+
+The relay server can run in Docker for LAN or hosted validation:
+
+```bash
+cp .env.example .env
+docker compose up --build relay
+```
+
+Use the same `EASYCODE_RELAY_ADMIN_TOKEN` value when starting a desktop agent
+against that relay.
+
 ## Current limitations
 
 - The relay server uses in-memory storage. PostgreSQL and Redis adapters should
