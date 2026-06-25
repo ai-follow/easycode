@@ -8,7 +8,8 @@ device and relays user input back to the selected desktop client.
 ## What is implemented now
 
 - Shared protocol package with typed relay envelopes and client adapter models.
-- WebSocket relay server with an in-memory pairing flow.
+- WebSocket relay server with an in-memory pairing flow, per-pair server
+  sequence numbers, replay backlog, and reconnect cursors.
 - Desktop agent core with a complete mock adapter for end-to-end validation.
 - macOS accessibility adapter foundations for Cursor, Codex, and Claude clients:
   window discovery, visible text snapshots, interaction option extraction, and
@@ -55,6 +56,8 @@ docs/architecture.md     Architecture notes and extension points
 
 - The relay server uses in-memory storage. PostgreSQL and Redis adapters should
   replace it before a hosted deployment.
+- Reconnect recovery is implemented with an in-memory backlog. It is suitable
+  for local validation, but production still needs durable storage.
 - Real desktop-client extraction is heuristic. The macOS adapter reads the
   Accessibility tree and works best when the target client exposes chat text and
   buttons through native accessibility nodes. Cursor should be validated first.

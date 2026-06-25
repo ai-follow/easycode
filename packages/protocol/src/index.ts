@@ -170,6 +170,7 @@ export type RelayPayload = z.infer<typeof RelayPayloadSchema>;
 export const RelayEnvelopeSchema = z.object({
   id: z.string().min(1),
   pairId: z.string().min(1),
+  serverSeq: z.number().int().positive().optional(),
   source: RelaySourceSchema,
   createdAt: z.string().datetime(),
   payload: RelayPayloadSchema

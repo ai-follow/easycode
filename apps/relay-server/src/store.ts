@@ -18,6 +18,7 @@ type PairingRecord = {
   desktopToken: string;
   mobileToken?: string;
   expiresAtMs: number;
+  nextServerSeq: number;
   connections: Map<string, RelayConnection>;
   backlog: RelayEnvelope[];
   seenEnvelopeIds: Set<string>;
@@ -43,6 +44,7 @@ export class RelayStore {
       pairingCode: this.createUniquePairingCode(),
       desktopToken: token(),
       expiresAtMs,
+      nextServerSeq: 1,
       connections: new Map(),
       backlog: [],
       seenEnvelopeIds: new Set()
@@ -81,10 +83,13 @@ export class RelayStore {
     return Boolean(record.mobileToken) && providedToken === record.mobileToken;
   }
 
-  addConnection(pairId: string, connection: RelayConnection): RelayEnvelope[] {
+  addConnection(pairId: string, connection: RelayConnection, afterSeq?: number): RelayEnvelope[] {
     const record = this.getRequiredPairing(pairId);
     record.connections.set(connection.id, connection);
-    return [...record.backlog];
+    if (typeof afterSeq !== "number" || !Number.isFinite(afterSeq) || afterSeq < 1) {
+      return [...record.backlog];
+    }
+    return record.backlog.filter((envelope) => (envelope.serverSeq ?? 0) > afterSeq);
   }
 
   removeConnection(pairId: string, connectionId: string): void {
@@ -92,21 +97,26 @@ export class RelayStore {
     record?.connections.delete(connectionId);
   }
 
-  acceptEnvelope(envelope: RelayEnvelope): { duplicate: boolean; recipients: RelayConnection[] } {
+  acceptEnvelope(envelope: RelayEnvelope): { duplicate: boolean; envelope?: RelayEnvelope; recipients: RelayConnection[] } {
     const record = this.getRequiredPairing(envelope.pairId);
     if (record.seenEnvelopeIds.has(envelope.id)) {
       return { duplicate: true, recipients: [] };
     }
 
+    const stampedEnvelope = {
+      ...envelope,
+      serverSeq: record.nextServerSeq
+    };
+    record.nextServerSeq += 1;
     record.seenEnvelopeIds.add(envelope.id);
-    record.backlog.push(envelope);
+    record.backlog.push(stampedEnvelope);
     if (record.backlog.length > BACKLOG_LIMIT) {
       record.backlog.splice(0, record.backlog.length - BACKLOG_LIMIT);
     }
 
     const targetRole: DeviceRole = envelope.source === "desktop" ? "mobile" : "desktop";
     const recipients = [...record.connections.values()].filter((connection) => connection.role === targetRole);
-    return { duplicate: false, recipients };
+    return { duplicate: false, envelope: stampedEnvelope, recipients };
   }
 
   getStats(): { pairings: number; connections: number } {

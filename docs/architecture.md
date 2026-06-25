@@ -57,6 +57,10 @@ The server treats payloads as opaque protocol messages. It may validate envelope
 shape, persist metadata, and fan out messages, but it must not interpret
 client-specific option labels such as approve, reject, continue, or stop.
 
+Each accepted envelope receives a per-pair `serverSeq`. Reconnecting clients can
+pass `afterSeq` to `/v1/ws` to receive only missed backlog items. This is a
+transport cursor, not a business-level acknowledgment.
+
 ## Production backlog
 
 - Replace in-memory relay store with PostgreSQL and Redis implementations.

@@ -34,6 +34,7 @@ export const App = () => {
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [draft, setDraft] = useState("");
   const socketRef = useRef<WebSocket | null>(null);
+  const lastServerSeqRef = useRef(0);
 
   const selected = selectedSessionId ? sessions[selectedSessionId] : undefined;
   const latestDelivery = selected?.deliveries.at(-1);
@@ -82,11 +83,14 @@ export const App = () => {
 
   const connectSocket = (nextPairId: string, nextMobileToken: string) => {
     setStatus("connecting");
+    const rememberedSeq = Number(window.localStorage.getItem(lastSeqKey(nextPairId)) ?? "0");
+    lastServerSeqRef.current = Number.isFinite(rememberedSeq) ? rememberedSeq : 0;
     const wsUrl = new URL("/v1/ws", serverUrl);
     wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
     wsUrl.searchParams.set("pairId", nextPairId);
     wsUrl.searchParams.set("role", "mobile");
     wsUrl.searchParams.set("token", nextMobileToken);
+    if (lastServerSeqRef.current > 0) wsUrl.searchParams.set("afterSeq", String(lastServerSeqRef.current));
 
     socketRef.current?.close();
     const ws = new WebSocket(wsUrl);
@@ -106,8 +110,15 @@ export const App = () => {
         setError(parsed.error.message);
         return;
       }
+      rememberServerSeq(parsed.data);
       applyEnvelope(parsed.data);
     };
+  };
+
+  const rememberServerSeq = (envelope: RelayEnvelope) => {
+    if (typeof envelope.serverSeq !== "number" || envelope.serverSeq <= lastServerSeqRef.current) return;
+    lastServerSeqRef.current = envelope.serverSeq;
+    window.localStorage.setItem(lastSeqKey(envelope.pairId), String(envelope.serverSeq));
   };
 
   const applyEnvelope = (envelope: RelayEnvelope) => {
@@ -362,3 +373,5 @@ const dedupeInteractions = (interactions: InteractionRequest[]): InteractionRequ
     return true;
   });
 };
+
+const lastSeqKey = (pairId: string): string => `easycode:last-server-seq:${pairId}`;

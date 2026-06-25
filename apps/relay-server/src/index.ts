@@ -29,6 +29,7 @@ server.on("upgrade", (request, socket, head) => {
   const pairId = url.searchParams.get("pairId") ?? "";
   const roleResult = DeviceRoleSchema.safeParse(url.searchParams.get("role"));
   const token = url.searchParams.get("token") ?? "";
+  const afterSeq = parseOptionalPositiveInt(url.searchParams.get("afterSeq"));
 
   if (!roleResult.success || !store.authenticate(pairId, roleResult.data, token)) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
@@ -37,17 +38,17 @@ server.on("upgrade", (request, socket, head) => {
   }
 
   wss.handleUpgrade(request, socket, head, (ws) => {
-    handleConnection(ws, pairId, roleResult.data);
+    handleConnection(ws, pairId, roleResult.data, afterSeq);
   });
 });
 
-const handleConnection = (ws: WebSocket, pairId: string, role: DeviceRole): void => {
+const handleConnection = (ws: WebSocket, pairId: string, role: DeviceRole, afterSeq?: number): void => {
   const connectionId = `${role}_${randomUUID()}`;
   const backlog = store.addConnection(pairId, {
     id: connectionId,
     role,
     send: (envelope) => send(connectionId, (data) => ws.send(data), envelope)
-  });
+  }, afterSeq);
 
   console.log(`[relay] ${role} connected pairId=${pairId} connection=${connectionId}`);
 
@@ -71,7 +72,8 @@ const handleConnection = (ws: WebSocket, pairId: string, role: DeviceRole): void
 
     const accepted = store.acceptEnvelope(envelope);
     if (accepted.duplicate) return;
-    for (const recipient of accepted.recipients) recipient.send(envelope);
+    if (!accepted.envelope) return;
+    for (const recipient of accepted.recipients) recipient.send(accepted.envelope);
   });
 
   ws.on("close", () => {
@@ -90,6 +92,12 @@ const safeJson = (raw: string): unknown => {
   } catch {
     return undefined;
   }
+};
+
+const parseOptionalPositiveInt = (value: string | null): number | undefined => {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 };
 
 const serverError = (pairId: string, message: string, refId?: string): RelayEnvelope => ({
