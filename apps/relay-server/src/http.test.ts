@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createRequestHandler } from "./http.js";
-import { MemoryRelayStore } from "./store.js";
+import { MemoryRelayStore, type RelayStore } from "./store.js";
 
 test("health and readiness endpoints expose deployment-safe status", async () => {
   const fixture = await startRelayHttp({
@@ -57,6 +57,22 @@ test("pairing creation requires the configured admin token", async () => {
     assert.equal(authorized.status, 201);
     assert.equal(typeof authorized.body.pairingCode, "string");
     assert.equal(typeof authorized.body.desktopToken, "string");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("readiness reports store failures with service-unavailable status", async () => {
+  const fixture = await startRelayHttp({}, failingStore("database unavailable"));
+
+  try {
+    const ready = await fetchJson(`${fixture.url}/ready`);
+    assert.equal(ready.status, 503);
+    assert.equal(ready.body.ready, false);
+    assert.deepEqual(ready.body.checks, {
+      store: false
+    });
+    assert.equal(ready.body.error, "database unavailable");
   } finally {
     await fixture.close();
   }
@@ -141,8 +157,11 @@ test("cors defaults to wildcard and can restrict allowed origins", async () => {
 
 type HandlerOptions = Parameters<typeof createRequestHandler>[1];
 
-const startRelayHttp = async (options: HandlerOptions = {}): Promise<{ url: string; close: () => Promise<void> }> => {
-  const server = createServer(createRequestHandler(new MemoryRelayStore(), options));
+const startRelayHttp = async (
+  options: HandlerOptions = {},
+  store: RelayStore = new MemoryRelayStore()
+): Promise<{ url: string; close: () => Promise<void> }> => {
+  const server = createServer(createRequestHandler(store, options));
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
@@ -175,3 +194,30 @@ const fetchJson = async (
     body: (await response.json()) as Record<string, unknown>
   };
 };
+
+const failingStore = (message: string): RelayStore => ({
+  createPairing: async () => {
+    throw new Error(message);
+  },
+  claimPairing: async () => {
+    throw new Error(message);
+  },
+  authenticate: async () => {
+    throw new Error(message);
+  },
+  addConnection: async () => {
+    throw new Error(message);
+  },
+  removeConnection: async () => {
+    throw new Error(message);
+  },
+  revokePairing: async () => {
+    throw new Error(message);
+  },
+  acceptEnvelope: async () => {
+    throw new Error(message);
+  },
+  getStats: async () => {
+    throw new Error(message);
+  }
+});

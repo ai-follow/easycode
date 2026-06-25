@@ -57,12 +57,8 @@ export const createRequestHandler =
       }
 
       if (request.method === "GET" && url.pathname === "/ready") {
-        sendJson(response, 200, {
-          ready: true,
-          checks: {
-            store: true
-          }
-        }, headers);
+        const ready = await readinessPayload(store);
+        sendJson(response, ready.ready ? 200 : 503, ready, headers);
         return;
       }
 
@@ -133,6 +129,26 @@ const healthPayload = async (store: RelayStore, options: RequestHandlerOptions) 
     heartbeatIntervalMs: options.heartbeatIntervalMs,
     ...(await store.getStats())
   };
+};
+
+const readinessPayload = async (store: RelayStore) => {
+  try {
+    await store.getStats();
+    return {
+      ready: true,
+      checks: {
+        store: true
+      }
+    };
+  } catch (error) {
+    return {
+      ready: false,
+      checks: {
+        store: false
+      },
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
 };
 
 const createResponseHeaders = (request: IncomingMessage, options: RequestHandlerOptions): ResponseHeaders => {
