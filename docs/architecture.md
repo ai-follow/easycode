@@ -72,6 +72,8 @@ with its pair token; the relay closes existing sockets for that pair.
 Each accepted envelope receives a per-pair `serverSeq`. Reconnecting clients can
 pass `afterSeq` to `/v1/ws` to receive only missed backlog items. This is a
 transport cursor, not a business-level acknowledgment.
+The in-memory backlog is bounded by `EASYCODE_RELAY_BACKLOG_LIMIT`, and pairing
+codes expire according to `EASYCODE_PAIRING_TTL_MS`.
 
 The mobile web client persists its relay URL and mobile pairing token in local
 storage after a successful claim. On socket close it reconnects with exponential

@@ -46,6 +46,9 @@ pnpm dev:desktop -- --adapter mock --server http://localhost:8787 --relay-token 
 
 Relay WebSockets use heartbeat pings to clear dead connections. Override the
 interval with `EASYCODE_WS_HEARTBEAT_MS`.
+Pairing code lifetime defaults to 10 minutes and can be changed with
+`EASYCODE_PAIRING_TTL_MS`. The in-memory reconnect replay backlog defaults to
+200 envelopes per pair and can be changed with `EASYCODE_RELAY_BACKLOG_LIMIT`.
 The desktop agent reconnects automatically and keeps a short in-memory send
 queue while the relay socket is unavailable.
 If the relay rejects the desktop socket token, the desktop agent stops

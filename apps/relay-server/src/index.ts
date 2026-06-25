@@ -17,7 +17,10 @@ import { createRelayStore } from "./store.js";
 const port = Number(process.env.PORT ?? 8787);
 const heartbeatIntervalMs = parsePositiveInt(process.env.EASYCODE_WS_HEARTBEAT_MS, 30000);
 const startedAt = new Date();
-const store = createRelayStore(process.env.EASYCODE_RELAY_STORE);
+const store = createRelayStore(process.env.EASYCODE_RELAY_STORE, {
+  pairingTtlMs: parsePositiveInt(process.env.EASYCODE_PAIRING_TTL_MS, 10 * 60 * 1000),
+  backlogLimit: parsePositiveInt(process.env.EASYCODE_RELAY_BACKLOG_LIMIT, 200)
+});
 const allowedOrigins = parseAllowedOrigins(process.env.EASYCODE_ALLOWED_ORIGINS);
 const server = createServer(createRequestHandler(store, {
   adminToken: process.env.EASYCODE_RELAY_ADMIN_TOKEN,

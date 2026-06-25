@@ -18,6 +18,11 @@ export type RelayStoreStats = {
   connections: number;
 };
 
+export type RelayStoreOptions = {
+  pairingTtlMs?: number;
+  backlogLimit?: number;
+};
+
 export type RelayStore = {
   createPairing(): Promise<CreatePairingResponse>;
   claimPairing(code: string): Promise<ClaimPairingResponse | undefined>;
@@ -41,27 +46,34 @@ type PairingRecord = {
   seenEnvelopeIds: Set<string>;
 };
 
-const PAIRING_TTL_MS = 10 * 60 * 1000;
-const BACKLOG_LIMIT = 200;
+const DEFAULT_PAIRING_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_BACKLOG_LIMIT = 200;
 
 const token = (): string => randomBytes(32).toString("base64url");
 const hashToken = (value: string): string => createHash("sha256").update(value).digest("base64url");
 const pairingCode = (): string => String(randomInt(100000, 1000000));
 const iso = (ms: number): string => new Date(ms).toISOString();
 
-export const createRelayStore = (driver = "memory"): RelayStore => {
-  if (driver === "memory") return new MemoryRelayStore();
+export const createRelayStore = (driver = "memory", options: RelayStoreOptions = {}): RelayStore => {
+  if (driver === "memory") return new MemoryRelayStore(options);
   throw new Error(`Unsupported relay store driver "${driver}". Only "memory" is implemented in this build.`);
 };
 
 export class MemoryRelayStore implements RelayStore {
   private readonly pairingsById = new Map<string, PairingRecord>();
   private readonly pairingsByCode = new Map<string, PairingRecord>();
+  private readonly pairingTtlMs: number;
+  private readonly backlogLimit: number;
+
+  constructor(options: RelayStoreOptions = {}) {
+    this.pairingTtlMs = positiveIntOrDefault(options.pairingTtlMs, DEFAULT_PAIRING_TTL_MS);
+    this.backlogLimit = positiveIntOrDefault(options.backlogLimit, DEFAULT_BACKLOG_LIMIT);
+  }
 
   async createPairing(): Promise<CreatePairingResponse> {
     this.gcExpired();
 
-    const expiresAtMs = Date.now() + PAIRING_TTL_MS;
+    const expiresAtMs = Date.now() + this.pairingTtlMs;
     const desktopToken = token();
     const record: PairingRecord = {
       pairId: `pair_${randomUUID()}`,
@@ -157,8 +169,8 @@ export class MemoryRelayStore implements RelayStore {
     record.nextServerSeq += 1;
     record.seenEnvelopeIds.add(envelope.id);
     record.backlog.push(stampedEnvelope);
-    if (record.backlog.length > BACKLOG_LIMIT) {
-      record.backlog.splice(0, record.backlog.length - BACKLOG_LIMIT);
+    if (record.backlog.length > this.backlogLimit) {
+      record.backlog.splice(0, record.backlog.length - this.backlogLimit);
     }
 
     const targetRole: DeviceRole = envelope.source === "desktop" ? "mobile" : "desktop";
@@ -204,3 +216,6 @@ const tokenMatches = (providedToken: string, expectedHash: string | undefined): 
   const expected = Buffer.from(expectedHash);
   return provided.length === expected.length && timingSafeEqual(provided, expected);
 };
+
+const positiveIntOrDefault = (value: number | undefined, fallback: number): number =>
+  Number.isInteger(value) && typeof value === "number" && value > 0 ? value : fallback;

@@ -47,6 +47,36 @@ test("ignores duplicate envelope ids", async () => {
   assert.equal(backlog.length, 1);
 });
 
+test("trims backlog to the configured limit", async () => {
+  const store = new MemoryRelayStore({ backlogLimit: 2 });
+  const pairing = await store.createPairing();
+
+  await store.acceptEnvelope(envelope(pairing.pairId, "one"));
+  await store.acceptEnvelope(envelope(pairing.pairId, "two"));
+  await store.acceptEnvelope(envelope(pairing.pairId, "three"));
+
+  const backlog = await store.addConnection(pairing.pairId, {
+    id: "mobile_1",
+    role: "mobile",
+    send: () => undefined
+  });
+
+  assert.deepEqual(
+    backlog.map((item) => item.id),
+    ["env_two", "env_three"]
+  );
+});
+
+test("uses configured pairing ttl", async () => {
+  const store = new MemoryRelayStore({ pairingTtlMs: 1234 });
+  const before = Date.now();
+  const pairing = await store.createPairing();
+  const expiresAt = new Date(pairing.expiresAt).getTime();
+
+  assert.ok(expiresAt >= before + 1234);
+  assert.ok(expiresAt < before + 2500);
+});
+
 test("allows a pairing code to be claimed only once", async () => {
   const store = new MemoryRelayStore();
   const pairing = await store.createPairing();
