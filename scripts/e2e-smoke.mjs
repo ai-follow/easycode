@@ -5,15 +5,32 @@ import { randomUUID } from "node:crypto";
 const root = new URL("..", import.meta.url);
 const port = await findOpenPort();
 const serverUrl = `http://localhost:${port}`;
+const relayAdminToken = "e2e-relay-admin-token";
 const processes = [];
 
 try {
   const relay = spawnManaged("relay", "node", ["apps/relay-server/dist/index.js"], {
-    PORT: String(port)
+    PORT: String(port),
+    EASYCODE_RELAY_ADMIN_TOKEN: relayAdminToken
   });
   await relay.waitForOutput(/listening/);
 
-  const desktop = spawnManaged("desktop", "node", ["apps/desktop-agent/dist/index.js", "--adapter", "mock", "--server", serverUrl]);
+  const unauthorizedPairing = await fetch(`${serverUrl}/v1/pairings`, {
+    method: "POST"
+  });
+  if (unauthorizedPairing.status !== 401) {
+    throw new Error(`Expected unauthorized pairing creation to return 401, got ${unauthorizedPairing.status}`);
+  }
+
+  const desktop = spawnManaged("desktop", "node", [
+    "apps/desktop-agent/dist/index.js",
+    "--adapter",
+    "mock",
+    "--server",
+    serverUrl,
+    "--relay-token",
+    relayAdminToken
+  ]);
   const pairingOutput = await desktop.waitForOutput(/pairing code:\s*(\d{6})/);
   const pairingCode = pairingOutput.match(/pairing code:\s*(\d{6})/)?.[1];
   if (!pairingCode) throw new Error("Desktop agent did not print a pairing code");

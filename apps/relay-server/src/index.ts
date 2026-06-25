@@ -7,7 +7,9 @@ import { RelayStore } from "./store.js";
 
 const port = Number(process.env.PORT ?? 8787);
 const store = new RelayStore();
-const server = createServer(createRequestHandler(store));
+const server = createServer(createRequestHandler(store, {
+  adminToken: process.env.EASYCODE_RELAY_ADMIN_TOKEN
+}));
 const wss = new WebSocketServer({ noServer: true });
 
 const send = (connectionId: string, wsSend: (data: string) => void, envelope: RelayEnvelope): void => {

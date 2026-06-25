@@ -7,6 +7,7 @@ import { createPairing, DesktopRelayClient } from "./relay-client.js";
 type CliOptions = {
   serverUrl: string;
   adapterName: AdapterName;
+  relayToken?: string;
 };
 
 const parseArgs = (): CliOptions => {
@@ -16,10 +17,16 @@ const parseArgs = (): CliOptions => {
     const value = args[index + 1];
     return index >= 0 && typeof value === "string" ? value : fallback;
   };
+  const getOptional = (name: string): string | undefined => {
+    const index = args.indexOf(name);
+    const value = args[index + 1];
+    return index >= 0 && typeof value === "string" ? value : undefined;
+  };
 
   return {
     serverUrl: get("--server", process.env.EASYCODE_SERVER_URL ?? "http://localhost:8787"),
-    adapterName: get("--adapter", process.env.EASYCODE_ADAPTER ?? "mock") as AdapterName
+    adapterName: get("--adapter", process.env.EASYCODE_ADAPTER ?? "mock") as AdapterName,
+    relayToken: getOptional("--relay-token") ?? process.env.EASYCODE_RELAY_TOKEN ?? process.env.EASYCODE_RELAY_ADMIN_TOKEN
   };
 };
 
@@ -29,7 +36,7 @@ const main = async (): Promise<void> => {
 
   console.log(`[desktop] using adapter=${options.adapterName} server=${options.serverUrl}`);
 
-  const pairing = await createPairing(options.serverUrl);
+  const pairing = await createPairing(options.serverUrl, options.relayToken);
   console.log(`[desktop] pairing code: ${pairing.pairingCode}`);
   console.log("[desktop] open the mobile client and claim this code before it expires.");
 

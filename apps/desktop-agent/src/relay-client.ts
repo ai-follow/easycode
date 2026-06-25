@@ -74,12 +74,15 @@ export class DesktopRelayClient {
   }
 }
 
-export const createPairing = async (serverUrl: string): Promise<CreatePairingResponse> => {
+export const createPairing = async (serverUrl: string, relayToken?: string): Promise<CreatePairingResponse> => {
+  const headers = new Headers({
+    "content-type": "application/json"
+  });
+  if (relayToken) headers.set("authorization", `Bearer ${relayToken}`);
+
   const response = await fetch(new URL("/v1/pairings", serverUrl), {
     method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
+    headers,
     body: "{}"
   });
 

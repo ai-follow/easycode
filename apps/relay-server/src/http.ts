@@ -1,11 +1,15 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RelayStore } from "./store.js";
 
+type RequestHandlerOptions = {
+  adminToken?: string;
+};
+
 const jsonHeaders = {
   "content-type": "application/json; charset=utf-8",
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET,POST,OPTIONS",
-  "access-control-allow-headers": "content-type"
+  "access-control-allow-headers": "authorization,content-type,x-easycode-relay-token"
 };
 
 const sendJson = (response: ServerResponse, statusCode: number, body: unknown): void => {
@@ -25,7 +29,7 @@ const readBody = async (request: IncomingMessage): Promise<unknown> => {
 };
 
 export const createRequestHandler =
-  (store: RelayStore) =>
+  (store: RelayStore, options: RequestHandlerOptions = {}) =>
   async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
@@ -42,6 +46,10 @@ export const createRequestHandler =
       }
 
       if (request.method === "POST" && url.pathname === "/v1/pairings") {
+        if (!isAuthorized(request, options.adminToken)) {
+          sendJson(response, 401, { error: "Unauthorized" });
+          return;
+        }
         sendJson(response, 201, store.createPairing());
         return;
       }
@@ -64,3 +72,14 @@ export const createRequestHandler =
       sendJson(response, 500, { error: message });
     }
   };
+
+const isAuthorized = (request: IncomingMessage, adminToken?: string): boolean => {
+  if (!adminToken) return true;
+
+  const authorization = request.headers.authorization ?? "";
+  const bearerToken = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
+  const headerToken = request.headers["x-easycode-relay-token"];
+  const explicitToken = Array.isArray(headerToken) ? headerToken[0] : headerToken;
+
+  return bearerToken === adminToken || explicitToken === adminToken;
+};

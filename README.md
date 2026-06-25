@@ -36,6 +36,13 @@ In another terminal:
 pnpm dev:desktop -- --adapter mock --server http://localhost:8787
 ```
 
+For a non-local relay, protect pairing creation with an admin token:
+
+```bash
+EASYCODE_RELAY_ADMIN_TOKEN=change-me pnpm dev:server
+pnpm dev:desktop -- --adapter mock --server http://localhost:8787 --relay-token change-me
+```
+
 The desktop agent prints a pairing code. In another terminal:
 
 ```bash
