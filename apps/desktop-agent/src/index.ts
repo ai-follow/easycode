@@ -13,6 +13,7 @@ type CliOptions = {
   targetIndex?: number;
   targetTitle?: string;
   listTargets: boolean;
+  e2ee: boolean;
 };
 
 const parseArgs = (): CliOptions => {
@@ -35,7 +36,8 @@ const parseArgs = (): CliOptions => {
     targetId: getOptional("--target"),
     targetIndex: parseOptionalIndex(getOptional("--target-index")),
     targetTitle: getOptional("--target-title"),
-    listTargets: args.includes("--list-targets")
+    listTargets: args.includes("--list-targets"),
+    e2ee: args.includes("--e2ee") || process.env.EASYCODE_E2EE === "1"
   };
 };
 
@@ -44,6 +46,7 @@ const main = async (): Promise<void> => {
   const adapter = createAdapter(options.adapterName);
 
   console.log(`[desktop] using adapter=${options.adapterName} server=${options.serverUrl}`);
+  if (options.e2ee) console.log("[desktop] e2ee enabled");
 
   const targets = await adapter.discoverClients();
   if (targets.length === 0) {
@@ -73,6 +76,7 @@ const main = async (): Promise<void> => {
     serverUrl: options.serverUrl,
     pairId: pairing.pairId,
     desktopToken: pairing.desktopToken,
+    e2ee: options.e2ee,
     onEnvelope: handleEnvelope
   });
   await relay.connect();

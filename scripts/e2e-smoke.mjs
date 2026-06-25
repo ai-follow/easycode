@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { connect as createConnection, createServer } from "node:net";
 import { randomBytes, randomUUID } from "node:crypto";
+import { RelayE2eeSession } from "../packages/e2ee/dist/index.js";
 import { PAIRING_REVOKED_CLOSE_CODE, PAIRING_REVOKED_CLOSE_REASON } from "../packages/protocol/dist/index.js";
 
 const root = new URL("..", import.meta.url);
@@ -37,7 +38,9 @@ try {
     serverUrl,
     "--relay-token",
     relayAdminToken
-  ]);
+  ], {
+    EASYCODE_E2EE: "1"
+  });
   const pairingOutput = await desktop.waitForOutput(/pairing code:\s*(\d{6})/);
   const pairingCode = pairingOutput.match(/pairing code:\s*(\d{6})/)?.[1];
   if (!pairingCode) throw new Error("Desktop agent did not print a pairing code");
@@ -82,7 +85,7 @@ try {
       text: "hello from e2e smoke"
     }
   };
-  const textEnvelopeId = sendMobile(first.ws, pairId, textPayload);
+  const textEnvelopeId = await sendMobile(first, pairId, textPayload);
   await waitFor(
     first.received,
     (envelope) => envelope.payload.kind === "ack" && envelope.payload.refId === textEnvelopeId,
@@ -104,7 +107,7 @@ try {
     first.received,
     (envelope) => envelope.payload.kind === "ack" && envelope.payload.refId === textEnvelopeId
   );
-  sendMobile(first.ws, pairId, textPayload, textEnvelopeId);
+  await sendMobile(first, pairId, textPayload, textEnvelopeId);
   await waitFor(
     first.received,
     () =>
@@ -120,7 +123,7 @@ try {
     throw new Error(`Expected duplicate envelope to be deduped before desktop delivery, got ${textEchoCount} echoes`);
   }
 
-  sendMobile(first.ws, pairId, {
+  await sendMobile(first, pairId, {
     kind: "user_input",
     sessionId,
     input: {
@@ -139,7 +142,7 @@ try {
   const option = interaction.options[0];
   if (!option) throw new Error("Interaction request had no options");
 
-  sendMobile(first.ws, pairId, {
+  await sendMobile(first, pairId, {
     kind: "user_input",
     sessionId,
     input: {
@@ -162,7 +165,7 @@ try {
 
   first.ws.close();
 
-  const replay = await connectMobile(serverUrl, pairId, mobileToken, seqAfterSnapshot);
+  const replay = await connectMobile(serverUrl, pairId, mobileToken, seqAfterSnapshot, first.e2ee);
   await sleep(400);
   const replayedSeqs = replay.received.map((envelope) => envelope.serverSeq ?? 0);
   if (replayedSeqs.length === 0) throw new Error("Expected replayed envelopes after reconnect cursor");
@@ -171,7 +174,7 @@ try {
   }
   replay.ws.close();
 
-  const revoked = await connectMobile(serverUrl, pairId, mobileToken, maxServerSeq(replay.received));
+  const revoked = await connectMobile(serverUrl, pairId, mobileToken, maxServerSeq(replay.received), replay.e2ee);
   const revokedClose = waitForClose(revoked.ws);
   const revoke = await fetch(`${serverUrl}/v1/pairings/${pairId}`, {
     method: "DELETE",
@@ -225,7 +228,7 @@ function spawnManaged(label, command, args, env = {}) {
   };
 }
 
-async function connectMobile(serverUrl, pairId, mobileToken, afterSeq = 0) {
+async function connectMobile(serverUrl, pairId, mobileToken, afterSeq = 0, e2ee) {
   const wsUrl = new URL("/v1/ws", serverUrl);
   wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
   wsUrl.searchParams.set("pairId", pairId);
@@ -234,9 +237,17 @@ async function connectMobile(serverUrl, pairId, mobileToken, afterSeq = 0) {
   if (afterSeq > 0) wsUrl.searchParams.set("afterSeq", String(afterSeq));
 
   const ws = new WebSocket(wsUrl);
+  const mobileE2ee = e2ee ?? await RelayE2eeSession.create({
+    role: "mobile",
+    pairId
+  });
   const received = [];
+  const rawReceived = [];
+  const errors = [];
   ws.addEventListener("message", (event) => {
-    received.push(JSON.parse(String(event.data)));
+    void handleMobileEnvelope(ws, mobileE2ee, received, rawReceived, JSON.parse(String(event.data))).catch((error) => {
+      errors.push(error);
+    });
   });
 
   await new Promise((resolve, reject) => {
@@ -244,7 +255,7 @@ async function connectMobile(serverUrl, pairId, mobileToken, afterSeq = 0) {
     ws.addEventListener("error", () => reject(new Error(`Failed to connect ${wsUrl}`)), { once: true });
   });
 
-  return { ws, received };
+  return { ws, received, rawReceived, errors, e2ee: mobileE2ee };
 }
 
 function websocketUpgradeStatus(serverUrl, origin, timeoutMs = 5000) {
@@ -286,17 +297,48 @@ function websocketUpgradeStatus(serverUrl, origin, timeoutMs = 5000) {
   });
 }
 
-function sendMobile(ws, pairId, payload, id = `env_${randomUUID()}`) {
-  ws.send(
-    JSON.stringify({
-      id,
-      pairId,
+async function handleMobileEnvelope(ws, e2ee, received, rawReceived, envelope) {
+  rawReceived.push(envelope);
+
+  if (envelope.payload.kind === "key_exchange") {
+    await e2ee.handleKeyExchange(envelope.payload);
+    ws.send(JSON.stringify({
+      id: `env_${randomUUID()}`,
+      pairId: envelope.pairId,
       source: "mobile",
       createdAt: new Date().toISOString(),
-      payload
-    })
-  );
+      payload: await e2ee.createHello()
+    }));
+    return;
+  }
+
+  if (envelope.payload.kind === "encrypted_payload") {
+    envelope = {
+      ...envelope,
+      payload: await e2ee.decryptEnvelopePayload(envelope)
+    };
+  }
+
+  received.push(envelope);
+}
+
+async function sendMobile(mobile, pairId, payload, id = `env_${randomUUID()}`) {
+  const envelope = {
+    id,
+    pairId,
+    source: "mobile",
+    createdAt: new Date().toISOString(),
+    payload
+  };
+  if (mobile.e2ee.ready && shouldEncryptPayload(payload)) {
+    envelope.payload = await mobile.e2ee.encryptEnvelopePayload(envelope, payload);
+  }
+  mobile.ws.send(JSON.stringify(envelope));
   return id;
+}
+
+function shouldEncryptPayload(payload) {
+  return !["ack", "error", "ping", "key_exchange", "encrypted_payload"].includes(payload.kind);
 }
 
 function countEnvelopes(envelopes, predicate) {

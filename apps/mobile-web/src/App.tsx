@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { RelayE2eeSession, type CleartextRelayPayload } from "@easycode/e2ee";
 import {
   ClaimPairingResponseSchema,
   PAIRING_REVOKED_CLOSE_CODE,
@@ -50,6 +51,8 @@ export const App = () => {
   const reconnectAttemptRef = useRef(0);
   const sendQueueRef = useRef<RelayEnvelope[]>([]);
   const pendingAcksRef = useRef(new Map<string, RelayEnvelope>());
+  const e2eeRef = useRef<RelayE2eeSession | null>(null);
+  const e2eePairIdRef = useRef("");
 
   const selected = selectedSessionId ? sessions[selectedSessionId] : undefined;
   const latestDelivery = selected?.deliveries.at(-1);
@@ -176,7 +179,9 @@ export const App = () => {
         return;
       }
       rememberServerSeq(parsed.data);
-      applyEnvelope(parsed.data);
+      void applyEnvelope(parsed.data).catch((caught) => {
+        setError(caught instanceof Error ? caught.message : String(caught));
+      });
     };
   };
 
@@ -197,7 +202,29 @@ export const App = () => {
     window.localStorage.setItem(lastSeqKey(envelope.pairId), String(envelope.serverSeq));
   };
 
-  const applyEnvelope = (envelope: RelayEnvelope) => {
+  const applyEnvelope = async (envelope: RelayEnvelope) => {
+    if (envelope.payload.kind === "key_exchange") {
+      const e2ee = await ensureE2eeSession(envelope.pairId);
+      await e2ee.handleKeyExchange(envelope.payload);
+      sendEnvelope({
+        id: `env_${crypto.randomUUID()}`,
+        pairId: envelope.pairId,
+        source: "mobile",
+        createdAt: new Date().toISOString(),
+        payload: await e2ee.createHello()
+      });
+      return;
+    }
+
+    if (envelope.payload.kind === "encrypted_payload") {
+      const e2ee = e2eeRef.current;
+      if (!e2ee?.ready) throw new Error("Received encrypted payload before mobile E2EE session was ready");
+      envelope = {
+        ...envelope,
+        payload: await e2ee.decryptEnvelopePayload(envelope)
+      };
+    }
+
     const payload = envelope.payload;
 
     if (payload.kind === "ack") {
@@ -300,7 +327,7 @@ export const App = () => {
     }
   };
 
-  const sendPayload = (payload: RelayPayload): boolean => {
+  const sendPayload = async (payload: RelayPayload): Promise<boolean> => {
     if (!pairId) {
       setError("No active pairing");
       return false;
@@ -313,8 +340,17 @@ export const App = () => {
       payload
     };
 
-    sendEnvelope(envelope);
+    sendEnvelope(await prepareOutboundEnvelope(envelope));
     return true;
+  };
+
+  const prepareOutboundEnvelope = async (envelope: RelayEnvelope): Promise<RelayEnvelope> => {
+    const e2ee = e2eeRef.current;
+    if (!e2ee?.ready || !shouldEncryptPayload(envelope.payload)) return envelope;
+    return {
+      ...envelope,
+      payload: await e2ee.encryptEnvelopePayload(envelope, envelope.payload as CleartextRelayPayload)
+    };
   };
 
   const sendEnvelope = (envelope: RelayEnvelope) => {
@@ -374,11 +410,11 @@ export const App = () => {
     setPendingOutboundCount(sendQueueRef.current.length + pendingAcksRef.current.size);
   };
 
-  const sendText = (event: FormEvent) => {
+  const sendText = async (event: FormEvent) => {
     event.preventDefault();
     const text = draft.trim();
     if (!text || !selectedSessionId) return;
-    const sent = sendPayload({
+    const sent = await sendPayload({
       kind: "user_input",
       sessionId: selectedSessionId,
       input: {
@@ -390,9 +426,9 @@ export const App = () => {
     if (sent) setDraft("");
   };
 
-  const sendInteractionResponse = (request: InteractionRequest, optionId: string, value: unknown) => {
+  const sendInteractionResponse = async (request: InteractionRequest, optionId: string, value: unknown) => {
     if (!selectedSessionId) return;
-    const sent = sendPayload({
+    const sent = await sendPayload({
       kind: "user_input",
       sessionId: selectedSessionId,
       input: {
@@ -448,6 +484,8 @@ export const App = () => {
     window.localStorage.removeItem(pairingStorageKey);
     reconnectAttemptRef.current = 0;
     lastServerSeqRef.current = 0;
+    e2eeRef.current = null;
+    e2eePairIdRef.current = "";
     sendQueueRef.current = [];
     pendingAcksRef.current.clear();
     updatePendingOutboundCount();
@@ -456,6 +494,17 @@ export const App = () => {
     setSessions({});
     setSelectedSessionId("");
     setDraft("");
+  };
+
+  const ensureE2eeSession = async (nextPairId: string): Promise<RelayE2eeSession> => {
+    if (e2eeRef.current && e2eePairIdRef.current === nextPairId) return e2eeRef.current;
+    const session = await RelayE2eeSession.create({
+      role: "mobile",
+      pairId: nextPairId
+    });
+    e2eeRef.current = session;
+    e2eePairIdRef.current = nextPairId;
+    return session;
   };
 
   return (
@@ -601,6 +650,13 @@ const loadStoredPairing = (): StoredPairing | undefined => {
 const storePairing = (pairing: StoredPairing): void => {
   window.localStorage.setItem(pairingStorageKey, JSON.stringify(pairing));
 };
+
+const shouldEncryptPayload = (payload: RelayPayload): boolean =>
+  payload.kind !== "ack" &&
+  payload.kind !== "error" &&
+  payload.kind !== "ping" &&
+  payload.kind !== "key_exchange" &&
+  payload.kind !== "encrypted_payload";
 
 const safeJson = (raw: string): unknown => {
   try {

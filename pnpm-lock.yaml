@@ -39,6 +39,9 @@ importers:
 
   apps/mobile-web:
     dependencies:
+      '@easycode/e2ee':
+        specifier: workspace:*
+        version: link:../../packages/e2ee
       '@easycode/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

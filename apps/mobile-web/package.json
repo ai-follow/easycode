@@ -12,6 +12,7 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@easycode/e2ee": "workspace:*",
     "@easycode/protocol": "workspace:*",
     "@vitejs/plugin-react": "^4.4.1",
     "vite": "^6.3.4",

@@ -8,10 +8,11 @@ device and relays user input back to the selected desktop client.
 ## What is implemented now
 
 - GitHub Actions CI for typecheck, tests, and production builds.
-- Automated relay + mock desktop + simulated mobile e2e smoke test.
+- Automated relay + mock desktop + simulated mobile e2e smoke test, including
+  the encrypted payload path.
 - Shared protocol package with typed relay envelopes and client adapter models.
-- Protocol support for opaque encrypted relay payloads, ready for a later
-  desktop/mobile end-to-end key exchange.
+- Protocol support for desktop/mobile `key_exchange` control messages and
+  opaque encrypted relay payloads.
 - Shared E2EE helper package for deriving relay payload keys and encrypting or
   decrypting payload bodies with P-256 ECDH, HKDF, and AES-GCM.
 - WebSocket relay server with memory and PostgreSQL stores, per-pair server
@@ -98,6 +99,15 @@ browsers do not allow custom WebSocket headers.
 On Android Chrome, use the browser install prompt or "Add to Home screen" after
 opening the mobile web URL.
 
+To exercise the encrypted payload path, start the desktop agent with:
+
+```bash
+EASYCODE_E2EE=1 pnpm dev:desktop -- --adapter mock --server http://localhost:8787
+```
+
+The mobile web client answers the desktop `key_exchange` message automatically
+and encrypts user input after the in-memory E2EE session is ready.
+
 ## Project layout
 
 ```text
@@ -153,11 +163,8 @@ EASYCODE_REDIS_TEST_URL=redis://localhost:6379 pnpm --filter @easycode/relay-ser
 - The relay server has initial PostgreSQL persistence and Redis fanout support,
   but hosted deployment still needs Redis operational hardening and multi-node
   soak testing.
-- The protocol can carry encrypted payloads, but clients still send cleartext
-  until the desktop/mobile key exchange and relay-client integration are
-  implemented.
-- The desktop relay client has a tested optional E2EE mode; it is not exposed in
-  the CLI until the mobile client can complete the same handshake.
+- E2EE keys are currently kept in memory. Browser reloads or app restarts can
+  lose the key needed to decrypt old encrypted replay backlog items.
 - The memory store is suitable for local validation. PostgreSQL persists
   envelope replay data; Redis fanout handles live delivery across relay nodes.
 - Real desktop-client extraction is heuristic. The macOS adapter reads the
