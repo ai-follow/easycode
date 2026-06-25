@@ -50,7 +50,9 @@ Pairing code lifetime defaults to 10 minutes and can be changed with
 `EASYCODE_PAIRING_TTL_MS`. The in-memory reconnect replay backlog defaults to
 200 envelopes per pair and can be changed with `EASYCODE_RELAY_BACKLOG_LIMIT`.
 The desktop agent reconnects automatically and keeps a short in-memory send
-queue while the relay socket is unavailable.
+queue while the relay socket is unavailable. Outbound envelopes keep the same
+id until the relay returns a transport `ack`, so reconnect retries can be
+deduplicated by the relay.
 If the relay rejects the desktop socket token, the desktop agent stops
 reconnecting because the pairing is no longer valid.
 Use `/health` for diagnostics and `/ready` for container readiness probes.

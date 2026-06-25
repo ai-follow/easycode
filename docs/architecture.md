@@ -91,8 +91,9 @@ respond by the next interval. This lets desktop and mobile clients fall back to
 their reconnect behavior instead of silently hanging on dead sockets.
 
 The desktop relay client also reconnects automatically and queues a bounded set
-of outbound payloads while disconnected. This protects transient relay socket
-loss without changing adapter behavior.
+of outbound envelopes while disconnected. Each queued envelope keeps its id
+until the relay returns an `ack`, so a reconnect can safely retry with the same
+id and let the relay deduplicate already accepted input.
 If the relay rejects the desktop socket with 401 or 403, the client treats the
 pairing as invalid and stops reconnecting.
 

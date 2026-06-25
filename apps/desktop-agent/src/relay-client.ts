@@ -19,6 +19,9 @@ type RelayClientOptions = {
   pairId: string;
   desktopToken: string;
   onEnvelope: (envelope: RelayEnvelope) => void | Promise<void>;
+  reconnectBaseMs?: number;
+  reconnectMaxMs?: number;
+  sendQueueLimit?: number;
 };
 
 export class DesktopRelayClient {
@@ -26,18 +29,25 @@ export class DesktopRelayClient {
   private readonly pairId: string;
   private readonly desktopToken: string;
   private readonly onEnvelope: (envelope: RelayEnvelope) => void | Promise<void>;
+  private readonly reconnectBaseMs: number;
+  private readonly reconnectMaxMs: number;
+  private readonly sendQueueLimit: number;
   private ws?: WebSocket;
   private closed = false;
   private reconnectAttempt = 0;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private connecting?: Promise<void>;
-  private readonly sendQueue: RelayPayload[] = [];
+  private readonly sendQueue: RelayEnvelope[] = [];
+  private readonly pendingAcks = new Map<string, RelayEnvelope>();
 
   constructor(options: RelayClientOptions) {
     this.serverUrl = options.serverUrl;
     this.pairId = options.pairId;
     this.desktopToken = options.desktopToken;
     this.onEnvelope = options.onEnvelope;
+    this.reconnectBaseMs = positiveIntOrDefault(options.reconnectBaseMs, RECONNECT_BASE_MS);
+    this.reconnectMaxMs = positiveIntOrDefault(options.reconnectMaxMs, RECONNECT_MAX_MS);
+    this.sendQueueLimit = positiveIntOrDefault(options.sendQueueLimit, SEND_QUEUE_LIMIT);
   }
 
   async connect(): Promise<void> {
@@ -46,13 +56,7 @@ export class DesktopRelayClient {
   }
 
   send(payload: RelayPayload): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this.enqueue(payload);
-      this.scheduleReconnect();
-      return;
-    }
-
-    this.sendEnvelope(payload);
+    this.sendEnvelope(this.createEnvelope(payload));
   }
 
   close(): void {
@@ -79,6 +83,8 @@ export class DesktopRelayClient {
 
     this.connecting = new Promise<void>((resolve, reject) => {
       ws.once("open", () => {
+        if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = undefined;
         this.reconnectAttempt = 0;
         this.flushQueue();
         resolve();
@@ -104,6 +110,15 @@ export class DesktopRelayClient {
         console.error(`[desktop] ignored invalid relay envelope: ${parsed.error.message}`);
         return;
       }
+      if (parsed.data.payload.kind === "ack") {
+        this.pendingAcks.delete(parsed.data.payload.refId);
+        return;
+      }
+      if (parsed.data.payload.kind === "error" && parsed.data.payload.refId) {
+        this.pendingAcks.delete(parsed.data.payload.refId);
+        console.error(`[desktop] relay rejected envelope ${parsed.data.payload.refId}: ${parsed.data.payload.message}`);
+        return;
+      }
       await this.onEnvelope(parsed.data);
     });
 
@@ -118,42 +133,68 @@ export class DesktopRelayClient {
         console.error("[desktop] relay pairing was revoked; reconnect stopped");
         return;
       }
-      if (!this.closed) this.scheduleReconnect();
+      if (!this.closed) {
+        this.requeuePendingAcks();
+        this.scheduleReconnect();
+      }
     });
 
     await this.connecting;
   }
 
-  private sendEnvelope(payload: RelayPayload): void {
-    const ws = this.ws;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      this.enqueue(payload);
-      this.scheduleReconnect();
-      return;
-    }
-
-    const envelope: RelayEnvelope = {
+  private createEnvelope(payload: RelayPayload): RelayEnvelope {
+    return {
       id: `env_${randomUUID()}`,
       pairId: this.pairId,
       source: "desktop",
       createdAt: new Date().toISOString(),
       payload
     };
-
-    ws.send(JSON.stringify(envelope));
   }
 
-  private enqueue(payload: RelayPayload): void {
-    this.sendQueue.push(payload);
-    if (this.sendQueue.length > SEND_QUEUE_LIMIT) {
-      this.sendQueue.splice(0, this.sendQueue.length - SEND_QUEUE_LIMIT);
+  private sendEnvelope(envelope: RelayEnvelope): void {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      this.enqueue(envelope);
+      this.scheduleReconnect();
+      return;
     }
+
+    this.pendingAcks.set(envelope.id, envelope);
+    ws.send(JSON.stringify(envelope), (error) => {
+      if (!error) return;
+      this.pendingAcks.delete(envelope.id);
+      this.enqueue(envelope);
+      this.scheduleReconnect();
+    });
+  }
+
+  private enqueue(envelope: RelayEnvelope): void {
+    if (this.sendQueue.some((queued) => queued.id === envelope.id)) return;
+    this.sendQueue.push(envelope);
+    this.trimQueue();
+  }
+
+  private requeuePendingAcks(): void {
+    const pending = [...this.pendingAcks.values()];
+    this.pendingAcks.clear();
+    for (const envelope of pending.reverse()) {
+      if (this.sendQueue.some((queued) => queued.id === envelope.id)) continue;
+      this.sendQueue.unshift(envelope);
+    }
+    this.trimQueue();
   }
 
   private flushQueue(): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    for (const payload of this.sendQueue.splice(0)) {
-      this.sendEnvelope(payload);
+    for (const envelope of this.sendQueue.splice(0)) {
+      this.sendEnvelope(envelope);
+    }
+  }
+
+  private trimQueue(): void {
+    if (this.sendQueue.length > this.sendQueueLimit) {
+      this.sendQueue.splice(0, this.sendQueue.length - this.sendQueueLimit);
     }
   }
 
@@ -162,7 +203,7 @@ export class DesktopRelayClient {
 
     const attempt = Math.min(this.reconnectAttempt + 1, 5);
     this.reconnectAttempt = attempt;
-    const delayMs = Math.min(RECONNECT_BASE_MS * 2 ** (attempt - 1), RECONNECT_MAX_MS);
+    const delayMs = Math.min(this.reconnectBaseMs * 2 ** (attempt - 1), this.reconnectMaxMs);
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
@@ -176,6 +217,7 @@ export class DesktopRelayClient {
   private stopReconnect(): void {
     this.closed = true;
     this.sendQueue.length = 0;
+    this.pendingAcks.clear();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
   }
@@ -207,3 +249,6 @@ const safeJson = (raw: string): unknown => {
     return undefined;
   }
 };
+
+const positiveIntOrDefault = (value: number | undefined, fallback: number): number =>
+  Number.isInteger(value) && typeof value === "number" && value > 0 ? value : fallback;
