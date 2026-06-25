@@ -16,3 +16,11 @@ flutter run
 The app mirrors the same relay protocol used by `apps/mobile-web`: claim a
 pairing code, connect to `/v1/ws`, render `session_snapshot` and `client_event`
 payloads, and send `user_input` payloads back to the desktop agent.
+
+Protocol model generation should use the checked-in schema bundle at
+`../../packages/protocol/schemas/easycode-protocol.schema.json`. Regenerate it
+after TypeScript protocol changes with:
+
+```bash
+pnpm --filter @easycode/protocol schema:generate
+```

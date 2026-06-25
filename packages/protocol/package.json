@@ -9,18 +9,22 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./schema": "./schemas/easycode-protocol.schema.json"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "schema:generate": "pnpm build && node scripts/generate-json-schema.mjs",
+    "schema:check": "node scripts/check-json-schema.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "pnpm build && node --test dist/**/*.test.js",
+    "test": "pnpm build && pnpm schema:check && node --test dist/**/*.test.js",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "zod": "^3.24.4"
   },
   "devDependencies": {
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "zod-to-json-schema": "^3.25.2"
   }
 }

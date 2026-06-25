@@ -1,0 +1,2398 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://easycode.dev/schemas/easycode-protocol.schema.json",
+  "title": "EasyCode Protocol",
+  "description": "Generated JSON Schema bundle for EasyCode relay protocol payloads and API responses.",
+  "anyOf": [
+    {
+      "$ref": "#/definitions/RelayEnvelope"
+    },
+    {
+      "$ref": "#/definitions/RelayPayload"
+    },
+    {
+      "$ref": "#/definitions/CreatePairingResponse"
+    },
+    {
+      "$ref": "#/definitions/ClaimPairingResponse"
+    }
+  ],
+  "definitions": {
+    "ClientAdapterId": {
+      "type": "string",
+      "enum": [
+        "codex",
+        "claude-code",
+        "cursor"
+      ]
+    },
+    "DeviceRole": {
+      "type": "string",
+      "enum": [
+        "desktop",
+        "mobile"
+      ]
+    },
+    "RelaySource": {
+      "type": "string",
+      "enum": [
+        "desktop",
+        "mobile",
+        "server"
+      ]
+    },
+    "AdapterCapability": {
+      "type": "object",
+      "properties": {
+        "readMode": {
+          "type": "string",
+          "enum": [
+            "structured",
+            "accessibility",
+            "ocr",
+            "none"
+          ]
+        },
+        "sendMode": {
+          "type": "string",
+          "enum": [
+            "official-api",
+            "accessibility",
+            "clipboard-paste",
+            "none"
+          ]
+        },
+        "interactionMode": {
+          "type": "string",
+          "enum": [
+            "official-api",
+            "accessibility",
+            "none"
+          ]
+        }
+      },
+      "required": [
+        "readMode",
+        "sendMode",
+        "interactionMode"
+      ],
+      "additionalProperties": false
+    },
+    "ClientTarget": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapterId": {
+          "type": "string",
+          "enum": [
+            "codex",
+            "claude-code",
+            "cursor"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "appName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "macos",
+            "windows",
+            "linux",
+            "mock"
+          ]
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "id",
+        "adapterId",
+        "title",
+        "appName",
+        "platform"
+      ],
+      "additionalProperties": false
+    },
+    "AttachedSession": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapterId": {
+          "type": "string",
+          "enum": [
+            "codex",
+            "claude-code",
+            "cursor"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attachedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "sessionId",
+        "targetId",
+        "adapterId",
+        "title",
+        "attachedAt"
+      ],
+      "additionalProperties": false
+    },
+    "ClientMessage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "user",
+            "assistant",
+            "system",
+            "tool",
+            "client"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "raw": {}
+      },
+      "required": [
+        "id",
+        "role",
+        "text",
+        "createdAt"
+      ],
+      "additionalProperties": false
+    },
+    "InteractionRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {}
+            },
+            "required": [
+              "id",
+              "label"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "raw": {}
+      },
+      "required": [
+        "id",
+        "text",
+        "options"
+      ],
+      "additionalProperties": false
+    },
+    "SessionState": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "discovering",
+            "attached",
+            "idle",
+            "streaming",
+            "waiting_for_user",
+            "error",
+            "closed"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "status",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "DeliveryState": {
+      "type": "object",
+      "properties": {
+        "inputId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "delivered",
+            "failed"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "inputId",
+        "status",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "DeliveryReceipt": {
+      "type": "object",
+      "properties": {
+        "inputId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "delivered",
+            "failed"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "deliveredAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "inputId",
+        "status",
+        "deliveredAt"
+      ],
+      "additionalProperties": false
+    },
+    "UserInput": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "text"
+            },
+            "inputId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "inputId",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "interaction_response"
+            },
+            "inputId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "optionId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "value": {}
+          },
+          "required": [
+            "type",
+            "inputId",
+            "requestId",
+            "optionId"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ClientEvent": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "message"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant",
+                    "system",
+                    "tool",
+                    "client"
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "raw": {}
+              },
+              "required": [
+                "id",
+                "role",
+                "text",
+                "createdAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "type",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "interaction_request"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "text": {
+                  "type": "string"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "value": {}
+                    },
+                    "required": [
+                      "id",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "raw": {}
+              },
+              "required": [
+                "id",
+                "text",
+                "options"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "type",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "session_state"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "discovering",
+                    "attached",
+                    "idle",
+                    "streaming",
+                    "waiting_for_user",
+                    "error",
+                    "closed"
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "status",
+                "updatedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "type",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "delivery_state"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "inputId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "queued",
+                    "delivered",
+                    "failed"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "inputId",
+                "status",
+                "updatedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "type",
+            "payload"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ConversationSnapshot": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapterId": {
+          "type": "string",
+          "enum": [
+            "codex",
+            "claude-code",
+            "cursor"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "user",
+                  "assistant",
+                  "system",
+                  "tool",
+                  "client"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "raw": {}
+            },
+            "required": [
+              "id",
+              "role",
+              "text",
+              "createdAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "pendingInteractions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {}
+                  },
+                  "required": [
+                    "id",
+                    "label"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "raw": {}
+            },
+            "required": [
+              "id",
+              "text",
+              "options"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "state": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "discovering",
+                "attached",
+                "idle",
+                "streaming",
+                "waiting_for_user",
+                "error",
+                "closed"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "detail": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "status",
+            "updatedAt"
+          ],
+          "additionalProperties": false
+        },
+        "capturedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "sessionId",
+        "adapterId",
+        "title",
+        "messages",
+        "pendingInteractions",
+        "state",
+        "capturedAt"
+      ],
+      "additionalProperties": false
+    },
+    "EncryptedRelayPayload": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "encrypted_payload"
+        },
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "suite": {
+          "type": "string",
+          "enum": [
+            "xchacha20poly1305-ietf",
+            "aes-256-gcm"
+          ]
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nonce": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ciphertext": {
+          "type": "string",
+          "minLength": 1
+        },
+        "aad": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind",
+        "version",
+        "suite",
+        "keyId",
+        "nonce",
+        "ciphertext"
+      ],
+      "additionalProperties": false
+    },
+    "KeyExchangePayload": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "key_exchange"
+        },
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "suite": {
+          "type": "string",
+          "const": "p256-hkdf-sha256-aes-256-gcm"
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "desktop_hello",
+            "mobile_hello"
+          ]
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "publicKey": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind",
+        "version",
+        "suite",
+        "phase",
+        "keyId",
+        "publicKey"
+      ],
+      "additionalProperties": false
+    },
+    "RelayPayload": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "desktop_status"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "adapterId": {
+                    "type": "string",
+                    "enum": [
+                      "codex",
+                      "claude-code",
+                      "cursor"
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "appName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "platform": {
+                    "type": "string",
+                    "enum": [
+                      "macos",
+                      "windows",
+                      "linux",
+                      "mock"
+                    ]
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "id",
+                  "adapterId",
+                  "title",
+                  "appName",
+                  "platform"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "sessions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "targetId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "adapterId": {
+                    "type": "string",
+                    "enum": [
+                      "codex",
+                      "claude-code",
+                      "cursor"
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "attachedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "sessionId",
+                  "targetId",
+                  "adapterId",
+                  "title",
+                  "attachedAt"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "capabilities": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "readMode": {
+                    "type": "string",
+                    "enum": [
+                      "structured",
+                      "accessibility",
+                      "ocr",
+                      "none"
+                    ]
+                  },
+                  "sendMode": {
+                    "type": "string",
+                    "enum": [
+                      "official-api",
+                      "accessibility",
+                      "clipboard-paste",
+                      "none"
+                    ]
+                  },
+                  "interactionMode": {
+                    "type": "string",
+                    "enum": [
+                      "official-api",
+                      "accessibility",
+                      "none"
+                    ]
+                  }
+                },
+                "required": [
+                  "readMode",
+                  "sendMode",
+                  "interactionMode"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "targets",
+            "sessions",
+            "capabilities"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "session_snapshot"
+            },
+            "sessionId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "snapshot": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "adapterId": {
+                  "type": "string",
+                  "enum": [
+                    "codex",
+                    "claude-code",
+                    "cursor"
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                },
+                "messages": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "assistant",
+                          "system",
+                          "tool",
+                          "client"
+                        ]
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "raw": {}
+                    },
+                    "required": [
+                      "id",
+                      "role",
+                      "text",
+                      "createdAt"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "pendingInteractions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "options": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "value": {}
+                          },
+                          "required": [
+                            "id",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "raw": {}
+                    },
+                    "required": [
+                      "id",
+                      "text",
+                      "options"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "state": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "discovering",
+                        "attached",
+                        "idle",
+                        "streaming",
+                        "waiting_for_user",
+                        "error",
+                        "closed"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                "capturedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "sessionId",
+                "adapterId",
+                "title",
+                "messages",
+                "pendingInteractions",
+                "state",
+                "capturedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "sessionId",
+            "snapshot"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "client_event"
+            },
+            "sessionId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "event": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "message"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "assistant",
+                            "system",
+                            "tool",
+                            "client"
+                          ]
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "raw": {}
+                      },
+                      "required": [
+                        "id",
+                        "role",
+                        "text",
+                        "createdAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "interaction_request"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "label": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "value": {}
+                            },
+                            "required": [
+                              "id",
+                              "label"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "raw": {}
+                      },
+                      "required": [
+                        "id",
+                        "text",
+                        "options"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "session_state"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "discovering",
+                            "attached",
+                            "idle",
+                            "streaming",
+                            "waiting_for_user",
+                            "error",
+                            "closed"
+                          ]
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "detail": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "delivery_state"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "inputId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "queued",
+                            "delivered",
+                            "failed"
+                          ]
+                        },
+                        "detail": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "inputId",
+                        "status",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "sessionId",
+            "event"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "user_input"
+            },
+            "sessionId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "input": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "text"
+                    },
+                    "inputId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "inputId",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "interaction_response"
+                    },
+                    "inputId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "optionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {}
+                  },
+                  "required": [
+                    "type",
+                    "inputId",
+                    "requestId",
+                    "optionId"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "sessionId",
+            "input"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "ack"
+            },
+            "refId": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "refId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "error"
+            },
+            "message": {
+              "type": "string"
+            },
+            "refId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "ping"
+            },
+            "nonce": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "nonce"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "key_exchange"
+            },
+            "version": {
+              "type": "number",
+              "const": 1
+            },
+            "suite": {
+              "type": "string",
+              "const": "p256-hkdf-sha256-aes-256-gcm"
+            },
+            "phase": {
+              "type": "string",
+              "enum": [
+                "desktop_hello",
+                "mobile_hello"
+              ]
+            },
+            "keyId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "publicKey": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "version",
+            "suite",
+            "phase",
+            "keyId",
+            "publicKey"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "encrypted_payload"
+            },
+            "version": {
+              "type": "number",
+              "const": 1
+            },
+            "suite": {
+              "type": "string",
+              "enum": [
+                "xchacha20poly1305-ietf",
+                "aes-256-gcm"
+              ]
+            },
+            "keyId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nonce": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ciphertext": {
+              "type": "string",
+              "minLength": 1
+            },
+            "aad": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "version",
+            "suite",
+            "keyId",
+            "nonce",
+            "ciphertext"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "RelayEnvelope": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pairId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "serverSeq": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "desktop",
+            "mobile",
+            "server"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "desktop_status"
+                },
+                "targets": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "adapterId": {
+                        "type": "string",
+                        "enum": [
+                          "codex",
+                          "claude-code",
+                          "cursor"
+                        ]
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "appName": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "platform": {
+                        "type": "string",
+                        "enum": [
+                          "macos",
+                          "windows",
+                          "linux",
+                          "mock"
+                        ]
+                      },
+                      "metadata": {
+                        "type": "object",
+                        "additionalProperties": {}
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "adapterId",
+                      "title",
+                      "appName",
+                      "platform"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "sessions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sessionId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "targetId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "adapterId": {
+                        "type": "string",
+                        "enum": [
+                          "codex",
+                          "claude-code",
+                          "cursor"
+                        ]
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "attachedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    },
+                    "required": [
+                      "sessionId",
+                      "targetId",
+                      "adapterId",
+                      "title",
+                      "attachedAt"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "capabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "readMode": {
+                        "type": "string",
+                        "enum": [
+                          "structured",
+                          "accessibility",
+                          "ocr",
+                          "none"
+                        ]
+                      },
+                      "sendMode": {
+                        "type": "string",
+                        "enum": [
+                          "official-api",
+                          "accessibility",
+                          "clipboard-paste",
+                          "none"
+                        ]
+                      },
+                      "interactionMode": {
+                        "type": "string",
+                        "enum": [
+                          "official-api",
+                          "accessibility",
+                          "none"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "readMode",
+                      "sendMode",
+                      "interactionMode"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "kind",
+                "targets",
+                "sessions",
+                "capabilities"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "session_snapshot"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "snapshot": {
+                  "type": "object",
+                  "properties": {
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "adapterId": {
+                      "type": "string",
+                      "enum": [
+                        "codex",
+                        "claude-code",
+                        "cursor"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "user",
+                              "assistant",
+                              "system",
+                              "tool",
+                              "client"
+                            ]
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "raw": {}
+                        },
+                        "required": [
+                          "id",
+                          "role",
+                          "text",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "pendingInteractions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {}
+                              },
+                              "required": [
+                                "id",
+                                "label"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "raw": {}
+                        },
+                        "required": [
+                          "id",
+                          "text",
+                          "options"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "state": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "discovering",
+                            "attached",
+                            "idle",
+                            "streaming",
+                            "waiting_for_user",
+                            "error",
+                            "closed"
+                          ]
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "detail": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "capturedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "sessionId",
+                    "adapterId",
+                    "title",
+                    "messages",
+                    "pendingInteractions",
+                    "state",
+                    "capturedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "kind",
+                "sessionId",
+                "snapshot"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "client_event"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "event": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "message"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "role": {
+                              "type": "string",
+                              "enum": [
+                                "user",
+                                "assistant",
+                                "system",
+                                "tool",
+                                "client"
+                              ]
+                            },
+                            "text": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "raw": {}
+                          },
+                          "required": [
+                            "id",
+                            "role",
+                            "text",
+                            "createdAt"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "payload"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "interaction_request"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "text": {
+                              "type": "string"
+                            },
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "label": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "value": {}
+                                },
+                                "required": [
+                                  "id",
+                                  "label"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "raw": {}
+                          },
+                          "required": [
+                            "id",
+                            "text",
+                            "options"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "payload"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "session_state"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "discovering",
+                                "attached",
+                                "idle",
+                                "streaming",
+                                "waiting_for_user",
+                                "error",
+                                "closed"
+                              ]
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "detail": {
+                              "type": "string"
+                            },
+                            "updatedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "updatedAt"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "payload"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "delivery_state"
+                        },
+                        "payload": {
+                          "type": "object",
+                          "properties": {
+                            "inputId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "queued",
+                                "delivered",
+                                "failed"
+                              ]
+                            },
+                            "detail": {
+                              "type": "string"
+                            },
+                            "updatedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "inputId",
+                            "status",
+                            "updatedAt"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "payload"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "sessionId",
+                "event"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "user_input"
+                },
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "input": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "text"
+                        },
+                        "inputId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "inputId",
+                        "text"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "interaction_response"
+                        },
+                        "inputId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "optionId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {}
+                      },
+                      "required": [
+                        "type",
+                        "inputId",
+                        "requestId",
+                        "optionId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "sessionId",
+                "input"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "ack"
+                },
+                "refId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "refId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "error"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "refId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "message"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "ping"
+                },
+                "nonce": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "nonce"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "key_exchange"
+                },
+                "version": {
+                  "type": "number",
+                  "const": 1
+                },
+                "suite": {
+                  "type": "string",
+                  "const": "p256-hkdf-sha256-aes-256-gcm"
+                },
+                "phase": {
+                  "type": "string",
+                  "enum": [
+                    "desktop_hello",
+                    "mobile_hello"
+                  ]
+                },
+                "keyId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "publicKey": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "version",
+                "suite",
+                "phase",
+                "keyId",
+                "publicKey"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "encrypted_payload"
+                },
+                "version": {
+                  "type": "number",
+                  "const": 1
+                },
+                "suite": {
+                  "type": "string",
+                  "enum": [
+                    "xchacha20poly1305-ietf",
+                    "aes-256-gcm"
+                  ]
+                },
+                "keyId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "nonce": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ciphertext": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "aad": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "version",
+                "suite",
+                "keyId",
+                "nonce",
+                "ciphertext"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "pairId",
+        "source",
+        "createdAt",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "CreatePairingResponse": {
+      "type": "object",
+      "properties": {
+        "pairId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pairingCode": {
+          "type": "string",
+          "minLength": 4
+        },
+        "desktopToken": {
+          "type": "string",
+          "minLength": 16
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "pairId",
+        "pairingCode",
+        "desktopToken",
+        "expiresAt"
+      ],
+      "additionalProperties": false
+    },
+    "ClaimPairingResponse": {
+      "type": "object",
+      "properties": {
+        "pairId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mobileToken": {
+          "type": "string",
+          "minLength": 16
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "pairId",
+        "mobileToken",
+        "expiresAt"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

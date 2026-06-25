@@ -11,6 +11,8 @@ device and relays user input back to the selected desktop client.
 - Automated relay + mock desktop + simulated mobile e2e smoke test, including
   the encrypted payload path.
 - Shared protocol package with typed relay envelopes and client adapter models.
+- Generated protocol JSON Schema artifact for non-TypeScript clients such as
+  the future Flutter app.
 - Protocol support for desktop/mobile `key_exchange` control messages and
   opaque encrypted relay payloads.
 - Shared E2EE helper package for deriving relay payload keys and encrypting or
@@ -104,6 +106,17 @@ browsers do not allow custom WebSocket headers.
 On Android Chrome, use the browser install prompt or "Add to Home screen" after
 opening the mobile web URL.
 
+When protocol types change, regenerate the checked-in JSON Schema bundle before
+committing:
+
+```bash
+pnpm --filter @easycode/protocol schema:generate
+```
+
+`pnpm --filter @easycode/protocol test` checks that
+`packages/protocol/schemas/easycode-protocol.schema.json` is in sync with the
+Zod protocol source.
+
 To exercise the encrypted payload path, start the desktop agent with:
 
 ```bash
@@ -120,6 +133,7 @@ with `EASYCODE_E2EE_STATE_DIR` or `--e2ee-state-dir`.
 
 ```text
 packages/protocol        Shared TypeScript protocol and runtime schemas
+packages/protocol/schemas Generated JSON Schema bundle for mobile/native clients
 packages/e2ee            Shared encryption helpers for relay payload bodies
 apps/relay-server        Pairing and WebSocket relay server
 apps/desktop-agent       Desktop agent core and client adapters

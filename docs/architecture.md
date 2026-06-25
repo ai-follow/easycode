@@ -16,6 +16,9 @@ that request as data and returns the user's selected response.
 - Mobile App: renders session messages and client-provided interaction options,
   then sends text or selected options back to the desktop agent.
 - Protocol Package: defines the only contract shared by all components.
+  The TypeScript/Zod source is authoritative; the generated
+  `packages/protocol/schemas/easycode-protocol.schema.json` bundle exists for
+  native clients and future Dart/Rust type generation.
 
 ## Adapter contract
 
@@ -67,6 +70,8 @@ does not need the derived payload key to sequence, store, or fan out envelopes.
 `@easycode/e2ee` owns the shared AES-GCM payload encryption helpers so desktop,
 mobile web, and future Flutter code use the same P-256 ECDH key exchange,
 HKDF key derivation, base64url encoding, and authenticated-data format.
+Native clients should consume the generated protocol JSON Schema rather than
+hand-maintaining parallel protocol maps.
 When E2EE is enabled, the desktop relay client sends a clear `key_exchange`
 hello and queues business payloads until the mobile client responds with its own
 `key_exchange` payload. After both sides derive the shared key, business
