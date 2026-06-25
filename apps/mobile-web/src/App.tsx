@@ -31,6 +31,7 @@ type StoredPairing = {
 
 const defaultServer = `${window.location.protocol}//${window.location.hostname}:8787`;
 const pairingStorageKey = "easycode:pairing";
+const mobileSendQueueLimit = 200;
 
 export const App = () => {
   const [serverUrl, setServerUrl] = useState(defaultServer);
@@ -42,10 +43,13 @@ export const App = () => {
   const [sessions, setSessions] = useState<Record<string, SessionModel>>({});
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [draft, setDraft] = useState("");
+  const [pendingOutboundCount, setPendingOutboundCount] = useState(0);
   const socketRef = useRef<WebSocket | null>(null);
   const lastServerSeqRef = useRef(0);
   const reconnectTimerRef = useRef<number | undefined>(undefined);
   const reconnectAttemptRef = useRef(0);
+  const sendQueueRef = useRef<RelayEnvelope[]>([]);
+  const pendingAcksRef = useRef(new Map<string, RelayEnvelope>());
 
   const selected = selectedSessionId ? sessions[selectedSessionId] : undefined;
   const latestDelivery = selected?.deliveries.at(-1);
@@ -141,6 +145,7 @@ export const App = () => {
       reconnectAttemptRef.current = 0;
       setStatus("connected");
       setError("");
+      flushSendQueue();
     };
     ws.onerror = () => {
       setStatus("error");
@@ -154,6 +159,7 @@ export const App = () => {
         setError("Pairing was revoked. Connect with a new code.");
         return;
       }
+      requeuePendingAcks();
       setStatus("disconnected");
       scheduleReconnect(nextPairId, nextMobileToken, relayUrl);
     };
@@ -194,12 +200,23 @@ export const App = () => {
   const applyEnvelope = (envelope: RelayEnvelope) => {
     const payload = envelope.payload;
 
+    if (payload.kind === "ack") {
+      pendingAcksRef.current.delete(payload.refId);
+      updatePendingOutboundCount();
+      return;
+    }
+
     if (payload.kind === "error") {
+      if (payload.refId) {
+        pendingAcksRef.current.delete(payload.refId);
+        removeQueuedEnvelope(payload.refId);
+        updatePendingOutboundCount();
+      }
       setError(payload.refId ? `${payload.message} (${payload.refId})` : payload.message);
       return;
     }
 
-    if (payload.kind === "ack" || payload.kind === "ping") return;
+    if (payload.kind === "ping") return;
 
     if (payload.kind === "desktop_status") {
       setSessions((current) => {
@@ -283,13 +300,11 @@ export const App = () => {
     }
   };
 
-  const sendPayload = (payload: RelayPayload) => {
-    const ws = socketRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      setError("Socket is not connected");
-      return;
+  const sendPayload = (payload: RelayPayload): boolean => {
+    if (!pairId) {
+      setError("No active pairing");
+      return false;
     }
-
     const envelope: RelayEnvelope = {
       id: `env_${crypto.randomUUID()}`,
       pairId,
@@ -298,15 +313,72 @@ export const App = () => {
       payload
     };
 
-    ws.send(JSON.stringify(envelope));
+    sendEnvelope(envelope);
+    return true;
+  };
+
+  const sendEnvelope = (envelope: RelayEnvelope) => {
+    const ws = socketRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      enqueueEnvelope(envelope);
+      setError("Socket is reconnecting. Message queued.");
+      return;
+    }
+
+    pendingAcksRef.current.set(envelope.id, envelope);
+    updatePendingOutboundCount();
+    try {
+      ws.send(JSON.stringify(envelope));
+    } catch (caught) {
+      pendingAcksRef.current.delete(envelope.id);
+      enqueueEnvelope(envelope);
+      setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  };
+
+  const enqueueEnvelope = (envelope: RelayEnvelope) => {
+    if (sendQueueRef.current.some((queued) => queued.id === envelope.id)) return;
+    sendQueueRef.current.push(envelope);
+    trimSendQueue();
+    updatePendingOutboundCount();
+  };
+
+  const flushSendQueue = () => {
+    const queued = sendQueueRef.current.splice(0);
+    updatePendingOutboundCount();
+    for (const envelope of queued) sendEnvelope(envelope);
+  };
+
+  const requeuePendingAcks = () => {
+    const pending = [...pendingAcksRef.current.values()];
+    pendingAcksRef.current.clear();
+    for (const envelope of pending.reverse()) {
+      if (sendQueueRef.current.some((queued) => queued.id === envelope.id)) continue;
+      sendQueueRef.current.unshift(envelope);
+    }
+    trimSendQueue();
+    updatePendingOutboundCount();
+  };
+
+  const removeQueuedEnvelope = (envelopeId: string) => {
+    sendQueueRef.current = sendQueueRef.current.filter((envelope) => envelope.id !== envelopeId);
+  };
+
+  const trimSendQueue = () => {
+    if (sendQueueRef.current.length > mobileSendQueueLimit) {
+      sendQueueRef.current.splice(0, sendQueueRef.current.length - mobileSendQueueLimit);
+    }
+  };
+
+  const updatePendingOutboundCount = () => {
+    setPendingOutboundCount(sendQueueRef.current.length + pendingAcksRef.current.size);
   };
 
   const sendText = (event: FormEvent) => {
     event.preventDefault();
     const text = draft.trim();
     if (!text || !selectedSessionId) return;
-    setDraft("");
-    sendPayload({
+    const sent = sendPayload({
       kind: "user_input",
       sessionId: selectedSessionId,
       input: {
@@ -315,11 +387,12 @@ export const App = () => {
         text
       }
     });
+    if (sent) setDraft("");
   };
 
   const sendInteractionResponse = (request: InteractionRequest, optionId: string, value: unknown) => {
     if (!selectedSessionId) return;
-    sendPayload({
+    const sent = sendPayload({
       kind: "user_input",
       sessionId: selectedSessionId,
       input: {
@@ -330,6 +403,7 @@ export const App = () => {
         value
       }
     });
+    if (!sent) return;
 
     setSessions((current) => {
       const previous = current[selectedSessionId];
@@ -374,6 +448,9 @@ export const App = () => {
     window.localStorage.removeItem(pairingStorageKey);
     reconnectAttemptRef.current = 0;
     lastServerSeqRef.current = 0;
+    sendQueueRef.current = [];
+    pendingAcksRef.current.clear();
+    updatePendingOutboundCount();
     setPairId("");
     setMobileToken("");
     setSessions({});
@@ -460,6 +537,11 @@ export const App = () => {
           {latestDelivery ? (
             <p className={`delivery delivery-${latestDelivery.status}`}>
               {latestDelivery.status}: {latestDelivery.detail ?? latestDelivery.inputId}
+            </p>
+          ) : null}
+          {pendingOutboundCount > 0 ? (
+            <p className="delivery delivery-queued">
+              waiting for relay ack: {pendingOutboundCount}
             </p>
           ) : null}
 

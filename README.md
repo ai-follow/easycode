@@ -73,6 +73,8 @@ Open the Vite URL on desktop or Android, enter `http://localhost:8787`, then
 claim the one-time pairing code shown by the desktop agent.
 After the first successful claim, the mobile web client stores the pairing
 credentials locally and will reconnect automatically.
+Like the desktop agent, the mobile web client keeps in-memory outbound
+envelopes with stable ids until the relay returns a transport `ack`.
 Use `Forget pairing` in the mobile web client to clear local credentials and
 revoke the relay pairing.
 If a pairing is revoked by either device, existing relay sockets are closed with

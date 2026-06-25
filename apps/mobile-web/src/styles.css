@@ -261,6 +261,11 @@ button.iconlink {
   color: #991b1b;
 }
 
+.delivery-queued {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
 .composer {
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   display: grid;

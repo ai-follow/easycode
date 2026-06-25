@@ -81,7 +81,9 @@ with `delivery_state` events.
 
 The mobile web client persists its relay URL and mobile pairing token in local
 storage after a successful claim. On socket close it reconnects with exponential
-backoff and includes the latest stored `afterSeq` cursor.
+backoff and includes the latest stored `afterSeq` cursor. It also keeps a
+bounded in-memory outbound queue and retries unacknowledged envelopes with the
+same id after reconnect.
 Browser WebSocket APIs cannot attach custom headers, so the mobile token travels
 in the WebSocket URL query. Desktop and other non-browser clients should send
 their pair token as an `Authorization: Bearer ...` header.
