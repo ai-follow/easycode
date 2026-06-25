@@ -62,6 +62,45 @@ test("pairing creation requires the configured admin token", async () => {
   }
 });
 
+test("pairing revocation requires a pair token", async () => {
+  const fixture = await startRelayHttp();
+
+  try {
+    const pairing = await fetchJson(`${fixture.url}/v1/pairings`, {
+      method: "POST"
+    });
+    const pairId = pairing.body.pairId;
+    const desktopToken = pairing.body.desktopToken;
+    const pairingCode = pairing.body.pairingCode;
+    assert.equal(typeof pairId, "string");
+    assert.equal(typeof desktopToken, "string");
+    assert.equal(typeof pairingCode, "string");
+
+    const unauthorized = await fetchJson(`${fixture.url}/v1/pairings/${pairId}`, {
+      method: "DELETE",
+      headers: {
+        authorization: "Bearer wrong-token"
+      }
+    });
+    assert.equal(unauthorized.status, 401);
+
+    const revoked = await fetch(`${fixture.url}/v1/pairings/${pairId}`, {
+      method: "DELETE",
+      headers: {
+        authorization: `Bearer ${desktopToken}`
+      }
+    });
+    assert.equal(revoked.status, 204);
+
+    const claimAfterRevoke = await fetchJson(`${fixture.url}/v1/pairings/${pairingCode}/claim`, {
+      method: "POST"
+    });
+    assert.equal(claimAfterRevoke.status, 404);
+  } finally {
+    await fixture.close();
+  }
+});
+
 test("cors defaults to wildcard and can restrict allowed origins", async () => {
   const openFixture = await startRelayHttp();
   try {

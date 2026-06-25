@@ -116,6 +116,14 @@ try {
   }
   replay.ws.close();
 
+  const revoke = await fetch(`${serverUrl}/v1/pairings/${pairId}`, {
+    method: "DELETE",
+    headers: {
+      authorization: `Bearer ${mobileToken}`
+    }
+  });
+  if (revoke.status !== 204) throw new Error(`Expected pairing revoke to return 204, got ${revoke.status}`);
+
   console.log(`e2e smoke ok pair=${pairId} session=${sessionId} replayed=${replayedSeqs.join(",")}`);
 } finally {
   for (const child of processes.reverse()) child.kill("SIGTERM");

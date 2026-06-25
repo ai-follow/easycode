@@ -60,6 +60,31 @@ test("allows a pairing code to be claimed only once", () => {
   assert.equal(store.authenticate(pairing.pairId, "mobile", firstClaim.mobileToken), true);
 });
 
+test("revokes a pairing with a desktop or mobile token", () => {
+  const store = new RelayStore();
+  const pairing = store.createPairing();
+  const claim = store.claimPairing(pairing.pairingCode);
+  assert.ok(claim);
+
+  let closed = false;
+  store.addConnection(pairing.pairId, {
+    id: "mobile_1",
+    role: "mobile",
+    send: () => undefined,
+    close: () => {
+      closed = true;
+    }
+  });
+
+  assert.equal(store.revokePairing(pairing.pairId, "wrong-token"), false);
+  assert.equal(store.authenticate(pairing.pairId, "mobile", claim.mobileToken), true);
+
+  assert.equal(store.revokePairing(pairing.pairId, claim.mobileToken), true);
+  assert.equal(closed, true);
+  assert.equal(store.authenticate(pairing.pairId, "mobile", claim.mobileToken), false);
+  assert.equal(store.revokePairing(pairing.pairId, claim.mobileToken), false);
+});
+
 const envelope = (pairId: string, id: string): RelayEnvelope => ({
   id: `env_${id}`,
   pairId,

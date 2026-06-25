@@ -324,6 +324,10 @@ export const App = () => {
   };
 
   const forgetPairing = () => {
+    const currentPairId = pairId;
+    const currentMobileToken = mobileToken;
+    const currentServerUrl = serverUrl;
+
     if (typeof reconnectTimerRef.current === "number") {
       window.clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = undefined;
@@ -344,6 +348,10 @@ export const App = () => {
     setDraft("");
     setError("");
     setStatus("disconnected");
+
+    if (currentPairId && currentMobileToken) {
+      void revokePairing(currentServerUrl, currentPairId, currentMobileToken);
+    }
   };
 
   return (
@@ -482,4 +490,17 @@ const loadStoredPairing = (): StoredPairing | undefined => {
 
 const storePairing = (pairing: StoredPairing): void => {
   window.localStorage.setItem(pairingStorageKey, JSON.stringify(pairing));
+};
+
+const revokePairing = async (serverUrl: string, pairId: string, mobileToken: string): Promise<void> => {
+  try {
+    await fetch(new URL(`/v1/pairings/${pairId}`, serverUrl), {
+      method: "DELETE",
+      headers: {
+        authorization: `Bearer ${mobileToken}`
+      }
+    });
+  } catch {
+    // Local forget should still succeed if the relay is already unreachable.
+  }
 };

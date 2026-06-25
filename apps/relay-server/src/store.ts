@@ -10,6 +10,7 @@ export type RelayConnection = {
   id: string;
   role: DeviceRole;
   send: (envelope: RelayEnvelope) => void;
+  close?: () => void;
 };
 
 type PairingRecord = {
@@ -98,6 +99,23 @@ export class RelayStore {
   removeConnection(pairId: string, connectionId: string): void {
     const record = this.pairingsById.get(pairId);
     record?.connections.delete(connectionId);
+  }
+
+  revokePairing(pairId: string, providedToken: string): boolean {
+    const record = this.pairingsById.get(pairId);
+    if (!record) return false;
+    if (providedToken !== record.desktopToken && providedToken !== record.mobileToken) return false;
+
+    this.pairingsById.delete(pairId);
+    if (this.pairingsByCode.get(record.pairingCode) === record) {
+      this.pairingsByCode.delete(record.pairingCode);
+    }
+
+    for (const connection of record.connections.values()) {
+      connection.close?.();
+    }
+    record.connections.clear();
+    return true;
   }
 
   acceptEnvelope(envelope: RelayEnvelope): { duplicate: boolean; envelope?: RelayEnvelope; recipients: RelayConnection[] } {

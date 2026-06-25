@@ -65,7 +65,8 @@ const handleConnection = (ws: WebSocket, pairId: string, role: DeviceRole, after
   const backlog = store.addConnection(pairId, {
     id: connectionId,
     role,
-    send: (envelope) => send(connectionId, (data) => ws.send(data), envelope)
+    send: (envelope) => send(connectionId, (data) => ws.send(data), envelope),
+    close: () => ws.close(1000, "Pairing revoked")
   }, afterSeq);
 
   console.log(`[relay] ${role} connected pairId=${pairId} connection=${connectionId}`);

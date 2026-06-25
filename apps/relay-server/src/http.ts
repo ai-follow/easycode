@@ -11,7 +11,7 @@ type RequestHandlerOptions = {
 
 const baseJsonHeaders = {
   "content-type": "application/json; charset=utf-8",
-  "access-control-allow-methods": "GET,POST,OPTIONS",
+  "access-control-allow-methods": "DELETE,GET,POST,OPTIONS",
   "access-control-allow-headers": "authorization,content-type,x-easycode-relay-token"
 };
 
@@ -74,6 +74,18 @@ export const createRequestHandler =
         return;
       }
 
+      const deleteMatch = url.pathname.match(/^\/v1\/pairings\/([^/]+)$/);
+      if (request.method === "DELETE" && deleteMatch?.[1]) {
+        const token = authToken(request);
+        if (!token || !store.revokePairing(deleteMatch[1], token)) {
+          sendJson(response, 401, { error: "Unauthorized" }, headers);
+          return;
+        }
+        response.writeHead(204, headers);
+        response.end();
+        return;
+      }
+
       const claimMatch = url.pathname.match(/^\/v1\/pairings\/([0-9]{6})\/claim$/);
       if (request.method === "POST" && claimMatch?.[1]) {
         await readBody(request);
@@ -96,12 +108,16 @@ export const createRequestHandler =
 const isAuthorized = (request: IncomingMessage, adminToken?: string): boolean => {
   if (!adminToken) return true;
 
-  const authorization = request.headers.authorization ?? "";
-  const bearerToken = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
+  const bearerToken = authToken(request);
   const headerToken = request.headers["x-easycode-relay-token"];
   const explicitToken = Array.isArray(headerToken) ? headerToken[0] : headerToken;
 
   return bearerToken === adminToken || explicitToken === adminToken;
+};
+
+const authToken = (request: IncomingMessage): string | undefined => {
+  const authorization = request.headers.authorization ?? "";
+  return authorization.match(/^Bearer\s+(.+)$/i)?.[1];
 };
 
 const healthPayload = (store: RelayStore, options: RequestHandlerOptions) => {
