@@ -3,12 +3,12 @@ import { randomUUID } from "node:crypto";
 import WebSocket, { WebSocketServer, type RawData } from "ws";
 import { DeviceRoleSchema, RelayEnvelopeSchema, type DeviceRole, type RelayEnvelope } from "@easycode/protocol";
 import { createRequestHandler } from "./http.js";
-import { RelayStore } from "./store.js";
+import { createRelayStore } from "./store.js";
 
 const port = Number(process.env.PORT ?? 8787);
 const heartbeatIntervalMs = parsePositiveInt(process.env.EASYCODE_WS_HEARTBEAT_MS, 30000);
 const startedAt = new Date();
-const store = new RelayStore();
+const store = createRelayStore(process.env.EASYCODE_RELAY_STORE);
 const server = createServer(createRequestHandler(store, {
   adminToken: process.env.EASYCODE_RELAY_ADMIN_TOKEN,
   allowedOrigins: parseAllowedOrigins(process.env.EASYCODE_ALLOWED_ORIGINS),

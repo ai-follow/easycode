@@ -53,6 +53,9 @@ reconnecting because the pairing is no longer valid.
 Use `/health` for diagnostics and `/ready` for container readiness probes.
 Set `EASYCODE_ALLOWED_ORIGINS` to a comma-separated allowlist for hosted mobile
 web clients; the default is `*` for local development.
+Set `EASYCODE_RELAY_STORE=memory` to select the current in-memory relay store.
+The store is behind an interface so PostgreSQL/Redis-backed drivers can replace
+it without changing the HTTP or WebSocket protocol layers.
 
 The desktop agent prints a pairing code. In another terminal:
 
@@ -94,8 +97,8 @@ against that relay.
 
 ## Current limitations
 
-- The relay server uses in-memory storage. PostgreSQL and Redis adapters should
-  replace it before a hosted deployment.
+- The relay server currently ships only the `memory` store driver. PostgreSQL
+  and Redis adapters should replace it before a hosted deployment.
 - Reconnect recovery is implemented with an in-memory backlog. It is suitable
   for local validation, but production still needs durable storage.
 - Real desktop-client extraction is heuristic. The macOS adapter reads the

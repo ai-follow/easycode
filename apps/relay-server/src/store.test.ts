@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { RelayEnvelope } from "@easycode/protocol";
-import { RelayStore } from "./store.js";
+import { createRelayStore, MemoryRelayStore } from "./store.js";
 
 test("assigns server sequence numbers and filters backlog by cursor", () => {
-  const store = new RelayStore();
+  const store = new MemoryRelayStore();
   const pairing = store.createPairing();
 
   const first = envelope(pairing.pairId, "one");
@@ -31,7 +31,7 @@ test("assigns server sequence numbers and filters backlog by cursor", () => {
 });
 
 test("ignores duplicate envelope ids", () => {
-  const store = new RelayStore();
+  const store = new MemoryRelayStore();
   const pairing = store.createPairing();
   const item = envelope(pairing.pairId, "same");
 
@@ -48,7 +48,7 @@ test("ignores duplicate envelope ids", () => {
 });
 
 test("allows a pairing code to be claimed only once", () => {
-  const store = new RelayStore();
+  const store = new MemoryRelayStore();
   const pairing = store.createPairing();
 
   const firstClaim = store.claimPairing(pairing.pairingCode);
@@ -61,7 +61,7 @@ test("allows a pairing code to be claimed only once", () => {
 });
 
 test("revokes a pairing with a desktop or mobile token", () => {
-  const store = new RelayStore();
+  const store = new MemoryRelayStore();
   const pairing = store.createPairing();
   const claim = store.claimPairing(pairing.pairingCode);
   assert.ok(claim);
@@ -83,6 +83,12 @@ test("revokes a pairing with a desktop or mobile token", () => {
   assert.equal(closed, true);
   assert.equal(store.authenticate(pairing.pairId, "mobile", claim.mobileToken), false);
   assert.equal(store.revokePairing(pairing.pairId, claim.mobileToken), false);
+});
+
+test("creates the configured relay store driver", () => {
+  assert.ok(createRelayStore() instanceof MemoryRelayStore);
+  assert.ok(createRelayStore("memory") instanceof MemoryRelayStore);
+  assert.throws(() => createRelayStore("postgres"), /Unsupported relay store driver "postgres"/);
 });
 
 const envelope = (pairId: string, id: string): RelayEnvelope => ({

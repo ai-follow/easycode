@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createRequestHandler } from "./http.js";
-import { RelayStore } from "./store.js";
+import { MemoryRelayStore } from "./store.js";
 
 test("health and readiness endpoints expose deployment-safe status", async () => {
   const fixture = await startRelayHttp({
@@ -142,7 +142,7 @@ test("cors defaults to wildcard and can restrict allowed origins", async () => {
 type HandlerOptions = Parameters<typeof createRequestHandler>[1];
 
 const startRelayHttp = async (options: HandlerOptions = {}): Promise<{ url: string; close: () => Promise<void> }> => {
-  const server = createServer(createRequestHandler(new RelayStore(), options));
+  const server = createServer(createRequestHandler(new MemoryRelayStore(), options));
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);

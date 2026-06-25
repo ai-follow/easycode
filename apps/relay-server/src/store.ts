@@ -13,6 +13,22 @@ export type RelayConnection = {
   close?: () => void;
 };
 
+export type RelayStoreStats = {
+  pairings: number;
+  connections: number;
+};
+
+export type RelayStore = {
+  createPairing(): CreatePairingResponse;
+  claimPairing(code: string): ClaimPairingResponse | undefined;
+  authenticate(pairId: string, role: DeviceRole, providedToken: string): boolean;
+  addConnection(pairId: string, connection: RelayConnection, afterSeq?: number): RelayEnvelope[];
+  removeConnection(pairId: string, connectionId: string): void;
+  revokePairing(pairId: string, providedToken: string): boolean;
+  acceptEnvelope(envelope: RelayEnvelope): { duplicate: boolean; envelope?: RelayEnvelope; recipients: RelayConnection[] };
+  getStats(): RelayStoreStats;
+};
+
 type PairingRecord = {
   pairId: string;
   pairingCode: string;
@@ -32,7 +48,12 @@ const token = (): string => randomBytes(32).toString("base64url");
 const pairingCode = (): string => String(randomInt(100000, 1000000));
 const iso = (ms: number): string => new Date(ms).toISOString();
 
-export class RelayStore {
+export const createRelayStore = (driver = "memory"): RelayStore => {
+  if (driver === "memory") return new MemoryRelayStore();
+  throw new Error(`Unsupported relay store driver "${driver}". Only "memory" is implemented in this build.`);
+};
+
+export class MemoryRelayStore implements RelayStore {
   private readonly pairingsById = new Map<string, PairingRecord>();
   private readonly pairingsByCode = new Map<string, PairingRecord>();
 
@@ -140,7 +161,7 @@ export class RelayStore {
     return { duplicate: false, envelope: stampedEnvelope, recipients };
   }
 
-  getStats(): { pairings: number; connections: number } {
+  getStats(): RelayStoreStats {
     this.gcExpired();
     let connections = 0;
     for (const record of this.pairingsById.values()) connections += record.connections.size;
