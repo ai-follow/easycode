@@ -1,0 +1,28 @@
+{
+  "name": "@easycode/desktop-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "easycode-desktop": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@easycode/protocol": "workspace:*",
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}
