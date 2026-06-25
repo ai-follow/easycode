@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
 import { connect as createConnection, createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { RelayE2eeSession } from "../packages/e2ee/dist/index.js";
 import { PAIRING_REVOKED_CLOSE_CODE, PAIRING_REVOKED_CLOSE_REASON } from "../packages/protocol/dist/index.js";
@@ -9,6 +12,7 @@ const port = await findOpenPort();
 const serverUrl = `http://localhost:${port}`;
 const relayAdminToken = "e2e-relay-admin-token";
 const processes = [];
+const e2eeStateDir = await mkdtemp(join(tmpdir(), "easycode-e2ee-state-"));
 
 try {
   const relay = spawnManaged("relay", "node", ["apps/relay-server/dist/index.js"], {
@@ -39,7 +43,8 @@ try {
     "--relay-token",
     relayAdminToken
   ], {
-    EASYCODE_E2EE: "1"
+    EASYCODE_E2EE: "1",
+    EASYCODE_E2EE_STATE_DIR: e2eeStateDir
   });
   const pairingOutput = await desktop.waitForOutput(/pairing code:\s*(\d{6})/);
   const pairingCode = pairingOutput.match(/pairing code:\s*(\d{6})/)?.[1];
@@ -195,6 +200,10 @@ try {
   console.log(`e2e smoke ok pair=${pairId} session=${sessionId} replayed=${replayedSeqs.join(",")}`);
 } finally {
   for (const child of processes.reverse()) child.kill("SIGTERM");
+  await rm(e2eeStateDir, {
+    force: true,
+    recursive: true
+  });
 }
 
 function spawnManaged(label, command, args, env = {}) {

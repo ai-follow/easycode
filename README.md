@@ -108,6 +108,8 @@ EASYCODE_E2EE=1 pnpm dev:desktop -- --adapter mock --server http://localhost:878
 The mobile web client answers the desktop `key_exchange` message automatically,
 persists its E2EE state in local storage for browser reload recovery, and
 encrypts user input after the E2EE session is ready.
+The desktop agent stores E2EE state in `.easycode/e2ee` by default. Override it
+with `EASYCODE_E2EE_STATE_DIR` or `--e2ee-state-dir`.
 
 ## Project layout
 
@@ -164,8 +166,8 @@ EASYCODE_REDIS_TEST_URL=redis://localhost:6379 pnpm --filter @easycode/relay-ser
 - The relay server has initial PostgreSQL persistence and Redis fanout support,
   but hosted deployment still needs Redis operational hardening and multi-node
   soak testing.
-- Mobile web E2EE state is stored in browser local storage for reload recovery;
-  desktop E2EE state is still process-local.
+- E2EE state is currently stored in browser local storage and local desktop
+  files, not platform secure storage.
 - The memory store is suitable for local validation. PostgreSQL persists
   envelope replay data; Redis fanout handles live delivery across relay nodes.
 - Real desktop-client extraction is heuristic. The macOS adapter reads the

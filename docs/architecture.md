@@ -111,6 +111,10 @@ The desktop relay client also reconnects automatically and queues a bounded set
 of outbound envelopes while disconnected. Each queued envelope keeps its id
 until the relay returns an `ack`, so a reconnect can safely retry with the same
 id and let the relay deduplicate already accepted input.
+When E2EE is enabled, desktop ECDH state is persisted through a small store
+interface. The CLI uses a local file store under `.easycode/e2ee` by default;
+the future Tauri shell should replace that implementation with platform secure
+storage.
 If the relay rejects the desktop socket with 401 or 403, the client treats the
 pairing as invalid and stops reconnecting.
 
@@ -143,8 +147,8 @@ restarts.
 ## Production backlog
 
 - Harden Redis fanout for production multi-node deployments.
-- Persist desktop/native E2EE key state and move browser E2EE storage to a
-  stronger platform store when the app shell is available.
+- Move browser and desktop E2EE state into platform secure storage when the app
+  shells are available.
 - Add Tauri shell that embeds the desktop agent core and permissions UI.
 - Harden Cursor conversation extraction with resilient selectors and fixtures
   captured from real Cursor accessibility trees.

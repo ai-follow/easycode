@@ -2,6 +2,7 @@
 import type { RelayEnvelope, UserInput } from "@easycode/protocol";
 import type { AdapterName } from "./adapters/index.js";
 import { createAdapter } from "./adapters/index.js";
+import { defaultE2eeStateDir, FileRelayE2eeSessionStore } from "./e2ee-state.js";
 import { createPairing, DesktopRelayClient } from "./relay-client.js";
 import { formatTargets, selectTarget } from "./target-selection.js";
 
@@ -14,6 +15,7 @@ type CliOptions = {
   targetTitle?: string;
   listTargets: boolean;
   e2ee: boolean;
+  e2eeStateDir: string;
 };
 
 const parseArgs = (): CliOptions => {
@@ -37,7 +39,8 @@ const parseArgs = (): CliOptions => {
     targetIndex: parseOptionalIndex(getOptional("--target-index")),
     targetTitle: getOptional("--target-title"),
     listTargets: args.includes("--list-targets"),
-    e2ee: args.includes("--e2ee") || process.env.EASYCODE_E2EE === "1"
+    e2ee: args.includes("--e2ee") || process.env.EASYCODE_E2EE === "1",
+    e2eeStateDir: getOptional("--e2ee-state-dir") ?? defaultE2eeStateDir()
   };
 };
 
@@ -47,6 +50,7 @@ const main = async (): Promise<void> => {
 
   console.log(`[desktop] using adapter=${options.adapterName} server=${options.serverUrl}`);
   if (options.e2ee) console.log("[desktop] e2ee enabled");
+  if (options.e2ee) console.log(`[desktop] e2ee state dir=${options.e2eeStateDir}`);
 
   const targets = await adapter.discoverClients();
   if (targets.length === 0) {
@@ -77,6 +81,7 @@ const main = async (): Promise<void> => {
     pairId: pairing.pairId,
     desktopToken: pairing.desktopToken,
     e2ee: options.e2ee,
+    e2eeStore: options.e2ee ? new FileRelayE2eeSessionStore(options.e2eeStateDir) : undefined,
     onEnvelope: handleEnvelope
   });
   await relay.connect();

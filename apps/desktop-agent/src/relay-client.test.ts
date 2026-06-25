@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { test } from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
-import { RelayE2eeSession } from "@easycode/e2ee";
+import { RelayE2eeSession, type SerializedRelayE2eeSession } from "@easycode/e2ee";
 import type { RelayEnvelope, RelayPayload } from "@easycode/protocol";
-import { DesktopRelayClient } from "./relay-client.js";
+import { DesktopRelayClient, type RelayE2eeSessionStore } from "./relay-client.js";
 
 test("retries unacknowledged envelopes with the same id after reconnect", async () => {
   const received: RelayEnvelope[] = [];
@@ -146,10 +146,54 @@ test("e2ee mode exchanges keys, encrypts outgoing payloads, and decrypts incomin
   }
 });
 
+test("e2ee mode restores desktop session state before sending business payloads", async () => {
+  const received: RelayEnvelope[] = [];
+  const decryptedByMobile: RelayPayload[] = [];
+  const desktopE2ee = await RelayE2eeSession.create({
+    role: "desktop",
+    pairId: "pair_test"
+  });
+  const mobileE2ee = await RelayE2eeSession.create({
+    role: "mobile",
+    pairId: "pair_test"
+  });
+  await mobileE2ee.handleKeyExchange(await desktopE2ee.createHello());
+  await desktopE2ee.handleKeyExchange(await mobileE2ee.createHello());
+
+  const store = memoryE2eeStore(await desktopE2ee.serialize());
+  const harness = await createHarness(async (_socket, envelope) => {
+    received.push(envelope);
+    if (envelope.payload.kind === "encrypted_payload") {
+      decryptedByMobile.push(await mobileE2ee.decryptEnvelopePayload(envelope));
+    }
+  });
+  const client = createTestClient(harness.serverUrl, {
+    e2ee: true,
+    e2eeStore: store
+  });
+
+  try {
+    await client.connect();
+    client.send({
+      kind: "desktop_status",
+      targets: [],
+      sessions: [],
+      capabilities: {}
+    });
+
+    await waitFor(() => decryptedByMobile.some((payload) => payload.kind === "desktop_status"), "restored encrypted desktop status");
+    assert.equal(received.some((envelope) => envelope.payload.kind === "desktop_status"), false);
+  } finally {
+    client.close();
+    await harness.close();
+  }
+});
+
 const createTestClient = (
   serverUrl: string,
   options: {
     e2ee?: boolean;
+    e2eeStore?: RelayE2eeSessionStore;
     onEnvelope?: (envelope: RelayEnvelope) => void | Promise<void>;
   } = {}
 ): DesktopRelayClient =>
@@ -160,8 +204,22 @@ const createTestClient = (
     reconnectBaseMs: 10,
     reconnectMaxMs: 20,
     e2ee: options.e2ee,
+    e2eeStore: options.e2eeStore,
     onEnvelope: options.onEnvelope ?? (() => undefined)
   });
+
+const memoryE2eeStore = (initial?: SerializedRelayE2eeSession): RelayE2eeSessionStore => {
+  let stored = initial;
+  return {
+    load: async () => stored,
+    save: async (_pairId, session) => {
+      stored = session;
+    },
+    delete: async () => {
+      stored = undefined;
+    }
+  };
+};
 
 async function createHarness(onEnvelope: (socket: WebSocket, envelope: RelayEnvelope) => void | Promise<void>): Promise<{
   serverUrl: string;

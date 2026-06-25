@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
-import { RelayE2eeSession, type CleartextRelayPayload } from "@easycode/e2ee";
+import { RelayE2eeSession, type CleartextRelayPayload, type SerializedRelayE2eeSession } from "@easycode/e2ee";
 import {
   CreatePairingResponseSchema,
   PAIRING_REVOKED_CLOSE_CODE,
@@ -24,6 +24,13 @@ type RelayClientOptions = {
   reconnectMaxMs?: number;
   sendQueueLimit?: number;
   e2ee?: boolean;
+  e2eeStore?: RelayE2eeSessionStore;
+};
+
+export type RelayE2eeSessionStore = {
+  load(pairId: string): Promise<SerializedRelayE2eeSession | undefined>;
+  save(pairId: string, session: SerializedRelayE2eeSession): Promise<void>;
+  delete?(pairId: string): Promise<void>;
 };
 
 export class DesktopRelayClient {
@@ -34,6 +41,7 @@ export class DesktopRelayClient {
   private readonly reconnectBaseMs: number;
   private readonly reconnectMaxMs: number;
   private readonly sendQueueLimit: number;
+  private readonly e2eeStore?: RelayE2eeSessionStore;
   private readonly e2eeSession?: Promise<RelayE2eeSession>;
   private ws?: WebSocket;
   private closed = false;
@@ -52,11 +60,9 @@ export class DesktopRelayClient {
     this.reconnectBaseMs = positiveIntOrDefault(options.reconnectBaseMs, RECONNECT_BASE_MS);
     this.reconnectMaxMs = positiveIntOrDefault(options.reconnectMaxMs, RECONNECT_MAX_MS);
     this.sendQueueLimit = positiveIntOrDefault(options.sendQueueLimit, SEND_QUEUE_LIMIT);
+    this.e2eeStore = options.e2eeStore;
     this.e2eeSession = options.e2ee
-      ? RelayE2eeSession.create({
-        role: "desktop",
-        pairId: options.pairId
-      })
+      ? this.createOrRestoreE2eeSession()
       : undefined;
   }
 
@@ -191,6 +197,7 @@ export class DesktopRelayClient {
     const e2ee = this.e2eeSession ? await this.e2eeSession : undefined;
     if (!e2ee || envelope.payload.kind !== "key_exchange") return;
     await e2ee.handleKeyExchange(envelope.payload);
+    await this.saveE2eeSession(e2ee);
     await this.flushPendingClearPayloads();
   }
 
@@ -210,6 +217,25 @@ export class DesktopRelayClient {
     if (this.pendingClearPayloads.length === 0) return;
     const pending = this.pendingClearPayloads.splice(0);
     for (const payload of pending) await this.sendPayload(payload);
+  }
+
+  private async createOrRestoreE2eeSession(): Promise<RelayE2eeSession> {
+    const stored = await this.e2eeStore?.load(this.pairId);
+    if (stored?.role === "desktop" && stored.pairId === this.pairId) {
+      try {
+        return await RelayE2eeSession.restore(stored);
+      } catch (error) {
+        console.error(`[desktop] ignored invalid e2ee state for pair ${this.pairId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    return RelayE2eeSession.create({
+      role: "desktop",
+      pairId: this.pairId
+    });
+  }
+
+  private async saveE2eeSession(session: RelayE2eeSession): Promise<void> {
+    await this.e2eeStore?.save(this.pairId, await session.serialize());
   }
 
   private createEnvelope(payload: RelayPayload): RelayEnvelope {
@@ -295,6 +321,9 @@ export class DesktopRelayClient {
     this.sendQueue.length = 0;
     this.pendingClearPayloads.length = 0;
     this.pendingAcks.clear();
+    void this.e2eeStore?.delete?.(this.pairId).catch((error) => {
+      console.error(`[desktop] failed to delete e2ee state for pair ${this.pairId}: ${error instanceof Error ? error.message : String(error)}`);
+    });
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
   }
