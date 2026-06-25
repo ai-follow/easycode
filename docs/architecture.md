@@ -110,6 +110,8 @@ sequenced by the selected relay store, then published through Redis pub/sub so
 other relay nodes can deliver them to local sockets for the same pair. The
 origin node ignores its own fanout message and delivers directly to its local
 recipients.
+`/ready` checks both the selected relay store and the Redis fanout bus when
+fanout is configured.
 
 ## Relay storage roadmap
 

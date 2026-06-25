@@ -72,7 +72,34 @@ test("readiness reports store failures with service-unavailable status", async (
     assert.deepEqual(ready.body.checks, {
       store: false
     });
-    assert.equal(ready.body.error, "database unavailable");
+    assert.deepEqual(ready.body.errors, {
+      store: "database unavailable"
+    });
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("readiness includes configured runtime checks", async () => {
+  const fixture = await startRelayHttp({
+    readinessChecks: {
+      fanout: async () => {
+        throw new Error("redis unavailable");
+      }
+    }
+  });
+
+  try {
+    const ready = await fetchJson(`${fixture.url}/ready`);
+    assert.equal(ready.status, 503);
+    assert.equal(ready.body.ready, false);
+    assert.deepEqual(ready.body.checks, {
+      store: true,
+      fanout: false
+    });
+    assert.deepEqual(ready.body.errors, {
+      fanout: "redis unavailable"
+    });
   } finally {
     await fixture.close();
   }

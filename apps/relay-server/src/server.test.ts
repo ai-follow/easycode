@@ -116,6 +116,44 @@ test("fanout bus forwards accepted envelopes to local recipients on another rela
   }
 });
 
+test("server readiness includes fanout bus health", async () => {
+  const fanoutBus = new InMemoryRelayFanoutBus();
+  fanoutBus.healthCheck = async () => {
+    throw new Error("fanout down");
+  };
+  const relay = createRelayServer({
+    store: new MemoryRelayStore(),
+    fanoutBus,
+    heartbeatIntervalMs: 1000,
+    logger: silentLogger
+  });
+  await listen(relay.server);
+
+  const address = relay.server.address();
+  if (typeof address !== "object" || !address) throw new Error("Relay test server did not bind to a port");
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/ready`);
+    const body = await response.json() as {
+      ready: boolean;
+      checks: Record<string, boolean>;
+      errors: Record<string, string>;
+    };
+
+    assert.equal(response.status, 503);
+    assert.equal(body.ready, false);
+    assert.deepEqual(body.checks, {
+      store: true,
+      fanout: false
+    });
+    assert.deepEqual(body.errors, {
+      fanout: "fanout down"
+    });
+  } finally {
+    await relay.close();
+  }
+});
+
 const silentLogger = {
   log: () => undefined,
   error: () => undefined

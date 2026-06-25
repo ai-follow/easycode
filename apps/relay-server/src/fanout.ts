@@ -10,6 +10,7 @@ export type RelayFanoutMessage = {
 export type RelayFanoutBus = {
   publish(message: RelayFanoutMessage): Promise<void>;
   subscribe(handler: (message: RelayFanoutMessage) => void | Promise<void>): Promise<void>;
+  healthCheck?(): Promise<void>;
   close?(): Promise<void>;
 };
 
@@ -42,6 +43,10 @@ export class InMemoryRelayFanoutBus implements RelayFanoutBus {
 
   async close(): Promise<void> {
     this.handlers.clear();
+  }
+
+  async healthCheck(): Promise<void> {
+    return undefined;
   }
 }
 
@@ -77,6 +82,11 @@ export class RedisRelayFanoutBus implements RelayFanoutBus {
       this.publisher.isOpen ? this.publisher.quit() : Promise.resolve(),
       this.subscriber.isOpen ? this.subscriber.quit() : Promise.resolve()
     ]);
+  }
+
+  async healthCheck(): Promise<void> {
+    await this.connect();
+    await this.publisher.ping();
   }
 
   private async connect(): Promise<void> {

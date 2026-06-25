@@ -58,6 +58,7 @@ deduplicated by the relay.
 If the relay rejects the desktop socket token, the desktop agent stops
 reconnecting because the pairing is no longer valid.
 Use `/health` for diagnostics and `/ready` for container readiness probes.
+Readiness checks the relay store and, when configured, the Redis fanout bus.
 Set `EASYCODE_ALLOWED_ORIGINS` to a comma-separated allowlist for hosted mobile
 web clients; the default is `*` for local development. The allowlist is applied
 to HTTP CORS and browser WebSocket Origin headers.

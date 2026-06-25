@@ -53,6 +53,11 @@ export const createRelayServer = (options: RelayServerOptions): RelayServerRunti
     adminToken: options.adminToken,
     allowedOrigins: options.allowedOrigins,
     heartbeatIntervalMs,
+    readinessChecks: options.fanoutBus?.healthCheck
+      ? {
+        fanout: () => options.fanoutBus?.healthCheck?.() ?? Promise.resolve()
+      }
+      : undefined,
     serviceVersion: options.serviceVersion,
     startedAt: options.startedAt
   }));

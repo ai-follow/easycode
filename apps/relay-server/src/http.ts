@@ -8,6 +8,7 @@ type RequestHandlerOptions = {
   heartbeatIntervalMs?: number;
   serviceVersion?: string;
   startedAt?: Date;
+  readinessChecks?: Record<string, () => Promise<void>>;
 };
 
 const baseJsonHeaders = {
@@ -57,7 +58,7 @@ export const createRequestHandler =
       }
 
       if (request.method === "GET" && url.pathname === "/ready") {
-        const ready = await readinessPayload(store);
+        const ready = await readinessPayload(store, options);
         sendJson(response, ready.ready ? 200 : 503, ready, headers);
         return;
       }
@@ -131,24 +132,34 @@ const healthPayload = async (store: RelayStore, options: RequestHandlerOptions) 
   };
 };
 
-const readinessPayload = async (store: RelayStore) => {
+const readinessPayload = async (store: RelayStore, options: RequestHandlerOptions) => {
+  const checks: Record<string, boolean> = {};
+  const errors: Record<string, string> = {};
+
   try {
     await store.getStats();
-    return {
-      ready: true,
-      checks: {
-        store: true
-      }
-    };
+    checks.store = true;
   } catch (error) {
-    return {
-      ready: false,
-      checks: {
-        store: false
-      },
-      error: error instanceof Error ? error.message : String(error)
-    };
+    checks.store = false;
+    errors.store = error instanceof Error ? error.message : String(error);
   }
+
+  for (const [name, check] of Object.entries(options.readinessChecks ?? {})) {
+    try {
+      await check();
+      checks[name] = true;
+    } catch (error) {
+      checks[name] = false;
+      errors[name] = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  const ready = Object.values(checks).every(Boolean);
+  return {
+    ready,
+    checks,
+    ...(Object.keys(errors).length > 0 ? { errors } : {})
+  };
 };
 
 const createResponseHeaders = (request: IncomingMessage, options: RequestHandlerOptions): ResponseHeaders => {
