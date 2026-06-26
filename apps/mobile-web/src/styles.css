@@ -150,6 +150,7 @@ button.iconlink {
 }
 
 .workspace-error {
+  flex: 0 0 auto;
   padding: 8px 12px;
   border-bottom: 1px solid #fecaca;
   background: #fef2f2;
@@ -167,11 +168,12 @@ button.iconlink {
 
 .workspace {
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto auto 1fr auto auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .sessionbar {
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 10px;
@@ -187,7 +189,21 @@ button.iconlink {
   font-weight: 700;
 }
 
+.actionbar {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border-bottom: 1px solid #dbeafe;
+  background: #eff6ff;
+}
+
+.primary-action {
+  width: 100%;
+  min-height: 48px;
+  overflow-wrap: anywhere;
+}
+
 .messages {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   padding: 14px 12px 24px;
@@ -248,11 +264,34 @@ button.iconlink {
 }
 
 .delivery {
+  flex: 0 0 auto;
   margin: 0;
   padding: 8px 12px;
   background: #eef2ff;
   color: #3730a3;
   font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.delivery p {
+  margin: 0;
+  line-height: 1.35;
+}
+
+.delivery strong {
+  text-transform: uppercase;
+}
+
+.delivery-command {
+  margin: 7px 0 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(17, 24, 39, 0.08);
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
@@ -267,6 +306,7 @@ button.iconlink {
 }
 
 .composer {
+  flex: 0 0 auto;
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   display: grid;
   grid-template-columns: minmax(0, 1fr) 82px;

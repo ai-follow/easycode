@@ -10,6 +10,12 @@ type InspectJson = {
   target: unknown;
   elementCount: number;
   snapshot: unknown;
+  continueProbe?: {
+    canSend: boolean;
+    mode: string;
+    label?: string;
+    text?: string;
+  };
 };
 
 const distDir = dirname(fileURLToPath(import.meta.url));
@@ -33,4 +39,32 @@ test("inspect CLI replays every accessibility fixture as JSON", async () => {
     assert.ok(parsed.elementCount > 0, `${fixtureFile} should expose accessibility elements`);
     ConversationSnapshotSchema.parse(parsed.snapshot);
   }
+});
+
+test("inspect continue probe reports the client option that mobile would send", () => {
+  const fixturePath = join(fixturesDir, "sample-accessibility.txt");
+  const result = spawnSync(process.execPath, [inspectCliPath, "--input", fixturePath, "--continue-probe", "--json"], {
+    cwd: packageRoot,
+    encoding: "utf8"
+  });
+
+  assert.equal(result.status, 0, `inspect stderr: ${result.stderr}`);
+  const parsed = JSON.parse(result.stdout) as InspectJson;
+  assert.equal(parsed.continueProbe?.canSend, true);
+  assert.equal(parsed.continueProbe?.mode, "interaction_response");
+  assert.equal(parsed.continueProbe?.label, "continue");
+});
+
+test("inspect continue probe falls back to text continue when no client decision is pending", () => {
+  const fixturePath = join(fixturesDir, "terminal-idle.txt");
+  const result = spawnSync(process.execPath, [inspectCliPath, "--input", fixturePath, "--continue-probe", "--json"], {
+    cwd: packageRoot,
+    encoding: "utf8"
+  });
+
+  assert.equal(result.status, 0, `inspect stderr: ${result.stderr}`);
+  const parsed = JSON.parse(result.stdout) as InspectJson;
+  assert.equal(parsed.continueProbe?.canSend, true);
+  assert.equal(parsed.continueProbe?.mode, "text");
+  assert.equal(parsed.continueProbe?.text, "continue");
 });

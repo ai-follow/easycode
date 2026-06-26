@@ -7,8 +7,62 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import 'e2ee.dart';
+
 void main() {
   runApp(const EasyCodeApp());
+}
+
+class PrimaryInteractionAction {
+  const PrimaryInteractionAction({
+    required this.request,
+    required this.option,
+  });
+
+  final Map<String, dynamic> request;
+  final Map<String, dynamic> option;
+}
+
+final _primaryActionPatterns = [
+  RegExp(r'\b(continue|proceed|resume|retry)\b', caseSensitive: false),
+  RegExp(r'\b(approve|allow|accept|yes|ok|okay|run)\b', caseSensitive: false),
+];
+
+const defaultContinueText = 'continue';
+
+PrimaryInteractionAction? selectPrimaryInteractionAction(List<Map<String, dynamic>> interactions) {
+  PrimaryInteractionAction? best;
+  var bestPatternIndex = _primaryActionPatterns.length;
+  var bestRequestIndex = interactions.length;
+  var bestOptionIndex = 0;
+
+  for (var requestIndex = 0; requestIndex < interactions.length; requestIndex += 1) {
+    final request = interactions[requestIndex];
+    final rawOptions = request['options'];
+    if (rawOptions is! List) continue;
+
+    for (var optionIndex = 0; optionIndex < rawOptions.length; optionIndex += 1) {
+      final rawOption = rawOptions[optionIndex];
+      if (rawOption is! Map<String, dynamic>) continue;
+      final label = rawOption['label'];
+      if (label is! String) continue;
+
+      final patternIndex = _primaryActionPatterns.indexWhere((pattern) => pattern.hasMatch(label));
+      if (patternIndex < 0) continue;
+
+      if (best == null ||
+          patternIndex < bestPatternIndex ||
+          (patternIndex == bestPatternIndex && requestIndex < bestRequestIndex) ||
+          (patternIndex == bestPatternIndex && requestIndex == bestRequestIndex && optionIndex < bestOptionIndex)) {
+        best = PrimaryInteractionAction(request: request, option: rawOption);
+        bestPatternIndex = patternIndex;
+        bestRequestIndex = requestIndex;
+        bestOptionIndex = optionIndex;
+      }
+    }
+  }
+
+  return best;
 }
 
 class EasyCodeApp extends StatelessWidget {
@@ -57,6 +111,7 @@ class _RelayScreenState extends State<RelayScreen> {
   final interactions = <Map<String, dynamic>>[];
   final queuedEnvelopes = <Map<String, dynamic>>[];
   final pendingAckEnvelopes = <String, Map<String, dynamic>>{};
+  final e2eeManager = FlutterE2eeSessionManager();
 
   @override
   void initState() {
@@ -92,13 +147,15 @@ class _RelayScreenState extends State<RelayScreen> {
     mobileToken = body['mobileToken'] as String;
     await savePairing(server, pairId, mobileToken);
     if (!mounted) return;
-    connectSocket();
+    unawaited(connectSocket());
   }
 
-  void connectSocket() {
+  Future<void> connectSocket() async {
     reconnectTimer?.cancel();
     reconnectTimer = null;
     closingIntentionally = false;
+    await e2eeManager.restore(pairId);
+    if (!mounted) return;
 
     final uri = Uri.parse(serverController.text.trim());
     final queryParameters = <String, String>{
@@ -118,14 +175,18 @@ class _RelayScreenState extends State<RelayScreen> {
     previousChannel?.sink.close();
     final nextChannel = WebSocketChannel.connect(wsUri);
     channel = nextChannel;
-    setState(() => status = 'Connecting');
+    setState(() => status = 'Connected');
 
     nextChannel.stream.listen(
       (event) {
         reconnectAttempt = 0;
-        applyEnvelope(jsonDecode(event as String) as Map<String, dynamic>);
-        if (mounted) setState(() => status = 'Connected');
-        flushQueuedEnvelopes();
+        unawaited(
+          applyEnvelope(jsonDecode(event as String) as Map<String, dynamic>).catchError((Object error) {
+            if (mounted && channel == nextChannel) {
+              setState(() => status = 'Relay payload error: $error');
+            }
+          }),
+        );
       },
       onError: (Object error) {
         if (!mounted || channel != nextChannel) return;
@@ -157,7 +218,7 @@ class _RelayScreenState extends State<RelayScreen> {
     mobileToken = storedMobileToken;
     lastServerSeq = prefs.getInt(lastSeqKey(storedPairId)) ?? 0;
     if (mounted) setState(() => status = 'Connecting');
-    connectSocket();
+    unawaited(connectSocket());
   }
 
   Future<void> savePairing(String serverUrl, String pairId, String mobileToken) async {
@@ -186,7 +247,7 @@ class _RelayScreenState extends State<RelayScreen> {
     reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
       reconnectTimer = null;
       if (pairId.isEmpty || mobileToken.isEmpty) return;
-      connectSocket();
+      unawaited(connectSocket());
     });
   }
 
@@ -206,6 +267,7 @@ class _RelayScreenState extends State<RelayScreen> {
     await prefs.remove(pairingPairIdKey);
     await prefs.remove(pairingMobileTokenKey);
     if (previousPairId.isNotEmpty) await prefs.remove(lastSeqKey(previousPairId));
+    if (previousPairId.isNotEmpty) await e2eeManager.forget(previousPairId);
     if (!mounted) return;
 
     setState(() {
@@ -227,9 +289,26 @@ class _RelayScreenState extends State<RelayScreen> {
     }
   }
 
-  void applyEnvelope(Map<String, dynamic> envelope) {
+  Future<void> applyEnvelope(Map<String, dynamic> envelope) async {
     unawaited(rememberServerSeq(envelope));
-    final payload = envelope['payload'] as Map<String, dynamic>;
+    var payload = envelope['payload'] as Map<String, dynamic>;
+
+    if (payload['kind'] == 'key_exchange') {
+      final reply = await e2eeManager.handleKeyExchange(envelope['pairId'] as String, payload);
+      unawaited(sendEnvelope({
+        'id': 'env_${DateTime.now().microsecondsSinceEpoch}',
+        'pairId': envelope['pairId'],
+        'source': 'mobile',
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'payload': reply,
+      }));
+      return;
+    }
+
+    if (payload['kind'] == 'encrypted_payload') {
+      payload = await e2eeManager.decryptEnvelopePayload(envelope);
+    }
+
     final kind = payload['kind'] as String;
 
     if (kind == 'ack') {
@@ -281,12 +360,23 @@ class _RelayScreenState extends State<RelayScreen> {
         }
       }
     });
+    if (mounted) setState(() => status = 'Connected');
+    unawaited(flushQueuedEnvelopes());
   }
 
   void sendText() {
     final text = messageController.text.trim();
     if (text.isEmpty || selectedSessionId.isEmpty) return;
     messageController.clear();
+    sendTextInput(text);
+  }
+
+  void sendContinueText() {
+    if (selectedSessionId.isEmpty) return;
+    sendTextInput(defaultContinueText);
+  }
+
+  void sendTextInput(String text) {
     sendInput({
       'type': 'text',
       'inputId': 'input_${DateTime.now().microsecondsSinceEpoch}',
@@ -317,24 +407,32 @@ class _RelayScreenState extends State<RelayScreen> {
         'input': input,
       },
     };
-    sendEnvelope(envelope);
+    unawaited(sendEnvelope(envelope));
   }
 
   String lastSeqKey(String pairId) => 'easycode:last-server-seq:$pairId';
 
-  void sendEnvelope(Map<String, dynamic> envelope) {
+  Future<void> sendEnvelope(Map<String, dynamic> envelope) async {
     if (channel == null || status != 'Connected') {
       enqueueEnvelope(envelope);
       return;
     }
 
-    pendingAckEnvelopes[envelope['id'] as String] = envelope;
+    late Map<String, dynamic> prepared;
+    try {
+      prepared = await e2eeManager.prepareOutboundEnvelope(envelope);
+    } catch (error) {
+      if (mounted) setState(() => status = 'E2EE send error: $error');
+      enqueueEnvelope(envelope);
+      return;
+    }
+    pendingAckEnvelopes[prepared['id'] as String] = prepared;
     updatePendingOutboundCount();
     try {
-      channel?.sink.add(jsonEncode(envelope));
+      channel?.sink.add(jsonEncode(prepared));
     } catch (_) {
-      pendingAckEnvelopes.remove(envelope['id']);
-      enqueueEnvelope(envelope);
+      pendingAckEnvelopes.remove(prepared['id']);
+      enqueueEnvelope(prepared);
     }
   }
 
@@ -349,13 +447,13 @@ class _RelayScreenState extends State<RelayScreen> {
     updatePendingOutboundCount();
   }
 
-  void flushQueuedEnvelopes() {
+  Future<void> flushQueuedEnvelopes() async {
     if (queuedEnvelopes.isEmpty || channel == null || status != 'Connected') return;
     final queued = List<Map<String, dynamic>>.from(queuedEnvelopes);
     queuedEnvelopes.clear();
     updatePendingOutboundCount();
     for (final envelope in queued) {
-      sendEnvelope(envelope);
+      await sendEnvelope(envelope);
     }
   }
 
@@ -410,6 +508,9 @@ class _RelayScreenState extends State<RelayScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final primaryAction = selectPrimaryInteractionAction(interactions);
+    final showGenericContinue = primaryAction == null && interactions.isEmpty && selectedSessionId.isNotEmpty;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('EasyCode'),
@@ -481,6 +582,28 @@ class _RelayScreenState extends State<RelayScreen> {
                 padding: const EdgeInsets.all(12),
                 child: Column(
                   children: [
+                    if (primaryAction != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: () => sendInteraction(primaryAction.request, primaryAction.option),
+                            child: Text(primaryAction.option['label'] as String? ?? 'Continue'),
+                          ),
+                        ),
+                      )
+                    else if (showGenericContinue)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: sendContinueText,
+                            child: const Text('Continue'),
+                          ),
+                        ),
+                      ),
                     if (pendingOutboundCount > 0)
                       Align(
                         alignment: Alignment.centerLeft,

@@ -55,6 +55,22 @@ clicks the matching accessible button when the mobile user selects one.
 Cursor should be the first real-client validation target. After Cursor is stable,
 the same adapter can be tuned for Codex and Claude by adjusting process names,
 filtering rules, and client-specific selectors.
+For terminal-first tools such as Claude Code and many Codex CLI sessions, the
+macOS adapter can scan multiple process candidates for the same logical adapter
+id. `claude-code` looks across common terminal apps, while `codex` keeps the
+Codex GUI process and terminal candidates in the same target list. The selected
+target carries its concrete macOS `processName`, so later snapshot capture,
+button clicks, and clipboard paste delivery all return to the same window.
+When the user only needs to push a session forward, the same adapter can run in
+continue-only mode: it reports `readMode: "none"` and skips accessibility
+snapshot capture, while keeping clipboard paste delivery to the selected target.
+In this mode, process discovery uses the macOS process list rather than
+Accessibility window enumeration, then falls back to configured candidates if no
+known process is detected. The inspect CLI has a matching no-input diagnostic
+path that reports which process would be selected and whether System Events can
+see it before EasyCode attempts clipboard delivery. Delivery best-effort
+activates the target app first, then sends clipboard paste and Enter through the
+matching System Events process.
 
 `@easycode/desktop-agent` also exposes an `inspect` command that captures the
 same accessibility data without connecting to the relay. This is the preferred

@@ -1,4 +1,7 @@
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { basename } from "node:path";
+import { promisify } from "node:util";
 import type {
   AdapterCapability,
   AttachedSession,
@@ -19,14 +22,25 @@ import {
   clickButtonByLabel,
   discoverProcessWindows,
   dumpAccessibilityTree,
-  pasteAndSubmitText
+  pasteAndSubmitText,
+  pasteAndSubmitTextToProcess
 } from "./macos-automation.js";
 import type { ClientAdapter } from "./types.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 2500;
+const PROCESS_LIST_TIMEOUT_MS = 3000;
+
+const execFileAsync = promisify(execFile);
 
 type MacWindowAdapterOptions = {
   id: ClientAdapterId;
+  appName: string;
+  processName: string;
+  processes?: MacProcessConfig[];
+  continueOnly?: boolean;
+};
+
+export type MacProcessConfig = {
   appName: string;
   processName: string;
 };
@@ -37,6 +51,8 @@ export class MacWindowAdapter implements ClientAdapter {
   readonly id: ClientAdapterId;
   private readonly appName: string;
   private readonly processName: string;
+  private readonly processes: MacProcessConfig[];
+  private readonly continueOnly: boolean;
   private readonly pollIntervalMs: number;
   private session?: AttachedSession;
   private target?: ClientTarget;
@@ -48,10 +64,25 @@ export class MacWindowAdapter implements ClientAdapter {
     this.id = options.id;
     this.appName = options.appName;
     this.processName = options.processName;
+    this.processes = options.processes ?? [
+      {
+        appName: options.appName,
+        processName: options.processName
+      }
+    ];
+    this.continueOnly = options.continueOnly ?? false;
     this.pollIntervalMs = Number(process.env.EASYCODE_ACCESSIBILITY_POLL_MS ?? DEFAULT_POLL_INTERVAL_MS);
   }
 
   capabilities(): AdapterCapability {
+    if (this.continueOnly) {
+      return {
+        readMode: "none",
+        sendMode: "clipboard-paste",
+        interactionMode: "none"
+      };
+    }
+
     return {
       readMode: "accessibility",
       sendMode: "clipboard-paste",
@@ -61,36 +92,41 @@ export class MacWindowAdapter implements ClientAdapter {
 
   async discoverClients(): Promise<ClientTarget[]> {
     if (process.platform !== "darwin") return [];
-
-    const windows = await discoverProcessWindows(this.processName);
-
-    if (windows.length === 0) {
-      return [
-        {
-          id: `${this.id}:process`,
-          adapterId: this.id,
-          title: this.appName,
-          appName: this.appName,
-          platform: "macos",
-          metadata: {
-            processName: this.processName,
-            windowIndex: 0
-          }
-        }
-      ];
+    if (this.continueOnly) {
+      const runningProcessNames = await safeListRunningMacProcessNames();
+      return selectContinueOnlyProcessConfigs(this.processes, runningProcessNames).map((processConfig) =>
+        this.processTarget(processConfig, runningProcessNames.has(processConfig.processName))
+      );
     }
 
-    return windows.map((window) => ({
-      id: `${this.id}:window:${window.windowIndex - 1}`,
-      adapterId: this.id,
-      title: window.title,
+    const targets: ClientTarget[] = [];
+
+    for (const processConfig of this.processes) {
+      const windows = await safeDiscoverProcessWindows(processConfig.processName);
+      targets.push(...windows.map((window) => this.windowTarget(processConfig, window)));
+    }
+
+    if (targets.length > 0) return targets;
+
+    const fallbackProcess = this.processes[0] ?? {
       appName: this.appName,
-      platform: "macos",
-      metadata: {
-        processName: this.processName,
-        windowIndex: window.windowIndex - 1
+      processName: this.processName
+    };
+    const prefix = this.processes.length > 1 ? `${this.id}:${targetIdSegment(fallbackProcess.processName)}` : this.id;
+    return [
+      {
+        id: `${prefix}:process`,
+        adapterId: this.id,
+        title: fallbackProcess.appName,
+        appName: fallbackProcess.appName,
+        platform: "macos",
+        metadata: {
+          appName: fallbackProcess.appName,
+          processName: fallbackProcess.processName,
+          windowIndex: 0
+        }
       }
-    }));
+    ];
   }
 
   async attach(target: ClientTarget): Promise<AttachedSession> {
@@ -110,13 +146,26 @@ export class MacWindowAdapter implements ClientAdapter {
 
   async getSnapshot(sessionId: string): Promise<ConversationSnapshot> {
     this.assertSession(sessionId);
-    const snapshot = await this.captureSnapshot(sessionId);
+    if (this.continueOnly) return this.continueOnlySnapshot(sessionId);
+    const snapshot = await this.captureSnapshotOrError(sessionId);
     this.rememberSnapshot(snapshot);
     return snapshot;
   }
 
   async *subscribeEvents(sessionId: string): AsyncIterable<ClientEvent> {
     this.assertSession(sessionId);
+    if (this.continueOnly) {
+      yield {
+        type: "session_state",
+        payload: {
+          status: "idle",
+          detail: "Continue-only mode: waiting for mobile text input",
+          updatedAt: nowIso()
+        }
+      };
+      return;
+    }
+
     yield {
       type: "session_state",
       payload: {
@@ -159,7 +208,7 @@ export class MacWindowAdapter implements ClientAdapter {
           type: "session_state",
           payload: {
             status: "error",
-            detail: error instanceof Error ? error.message : String(error),
+            detail: formatMacosAutomationError(this.id, error, this.targetProcessName()),
             updatedAt: nowIso()
           }
         };
@@ -180,7 +229,11 @@ export class MacWindowAdapter implements ClientAdapter {
     }
 
     if (input.type === "interaction_response") {
-      await this.clickInteractionOption(input.optionId, resolveInteractionResponseLabel(input, this.interactionOptionLabelsById));
+      try {
+        await this.clickInteractionOption(input.optionId, resolveInteractionResponseLabel(input, this.interactionOptionLabelsById));
+      } catch (error) {
+        throw this.formatDeliveryError(error);
+      }
       return {
         inputId: input.inputId,
         status: "delivered",
@@ -188,7 +241,15 @@ export class MacWindowAdapter implements ClientAdapter {
       };
     }
 
-    await pasteAndSubmitText(this.appName, input.text);
+    try {
+      if (this.usesProcessLevelPaste()) {
+        await pasteAndSubmitTextToProcess(this.targetProcessName(), input.text, this.targetAppName());
+      } else {
+        await pasteAndSubmitText(this.targetProcessName(), this.targetWindowIndex(), input.text);
+      }
+    } catch (error) {
+      throw this.formatDeliveryError(error);
+    }
     return {
       inputId: input.inputId,
       status: "delivered",
@@ -214,13 +275,69 @@ export class MacWindowAdapter implements ClientAdapter {
     }
 
     const windowIndex = this.targetWindowIndex();
-    const raw = await dumpAccessibilityTree(this.processName, windowIndex);
+    const raw = await dumpAccessibilityTree(this.targetProcessName(), windowIndex);
     return buildConversationSnapshotFromAccessibility({
       adapterId: this.id,
       sessionId,
       title: this.session?.title ?? this.appName,
       elements: parseAccessibilityDump(raw)
     });
+  }
+
+  private continueOnlySnapshot(sessionId: string): ConversationSnapshot {
+    const capturedAt = nowIso();
+    const title = this.session?.title ?? this.appName;
+    return {
+      sessionId,
+      adapterId: this.id,
+      title,
+      messages: [
+        {
+          id: `message_${this.id}_${sessionId}_continue_only`,
+          role: "system",
+          text: "Continue-only mode is attached. Mobile can send Continue without reading this desktop window.",
+          createdAt: capturedAt,
+          raw: {
+            source: "continue-only"
+          }
+        }
+      ],
+      pendingInteractions: [],
+      state: {
+        status: "idle",
+        title,
+        detail: "Continue-only mode: no macOS accessibility capture is required",
+        updatedAt: capturedAt
+      },
+      capturedAt
+    };
+  }
+
+  private async captureSnapshotOrError(sessionId: string): Promise<ConversationSnapshot> {
+    try {
+      return await this.captureSnapshot(sessionId);
+    } catch (error) {
+      return this.errorSnapshot(sessionId, error);
+    }
+  }
+
+  private errorSnapshot(sessionId: string, error: unknown): ConversationSnapshot {
+    const capturedAt = nowIso();
+    const title = this.session?.title ?? this.appName;
+    return {
+      sessionId,
+      adapterId: this.id,
+      title,
+      messages: [],
+      pendingInteractions: [],
+      state: {
+        status: "error",
+        title,
+        detail: formatMacosAutomationError(this.id, error, this.targetProcessName()),
+        updatedAt: capturedAt
+      },
+      capturedAt
+    };
   }
 
   private rememberSnapshot(snapshot: ConversationSnapshot): void {
@@ -234,12 +351,105 @@ export class MacWindowAdapter implements ClientAdapter {
     return typeof rawIndex === "number" ? rawIndex + 1 : 1;
   }
 
+  private targetProcessName(): string {
+    const processName = this.target?.metadata?.processName;
+    return typeof processName === "string" && processName.length > 0 ? processName : this.processName;
+  }
+
+  private targetAppName(): string {
+    const appName = this.target?.metadata?.appName;
+    return typeof appName === "string" && appName.length > 0 ? appName : this.appName;
+  }
+
+  private usesProcessLevelPaste(): boolean {
+    return this.continueOnly || this.target?.metadata?.continueOnly === true;
+  }
+
   private async clickInteractionOption(optionId: string, label: string): Promise<void> {
-    await clickButtonByLabel(this.processName, this.targetWindowIndex(), label || optionId);
+    await clickButtonByLabel(this.targetProcessName(), this.targetWindowIndex(), label || optionId);
+  }
+
+  private formatDeliveryError(error: unknown): Error {
+    return new Error(formatMacosAutomationError(this.id, error, this.targetProcessName(), {
+      continueOnly: this.usesProcessLevelPaste()
+    }));
+  }
+
+  private windowTarget(processConfig: MacProcessConfig, window: { title: string; windowIndex: number }): ClientTarget {
+    const prefix = this.processes.length > 1 ? `${this.id}:${targetIdSegment(processConfig.processName)}` : this.id;
+    return {
+      id: `${prefix}:window:${window.windowIndex - 1}`,
+      adapterId: this.id,
+      title: window.title,
+      appName: processConfig.appName,
+      platform: "macos",
+      metadata: {
+        appName: processConfig.appName,
+        processName: processConfig.processName,
+        windowIndex: window.windowIndex - 1
+      }
+    };
+  }
+
+  private processTarget(processConfig: MacProcessConfig, running?: boolean): ClientTarget {
+    const prefix = this.processes.length > 1 ? `${this.id}:${targetIdSegment(processConfig.processName)}` : this.id;
+    return {
+      id: `${prefix}:process`,
+      adapterId: this.id,
+      title: processConfig.appName,
+      appName: processConfig.appName,
+      platform: "macos",
+      metadata: {
+        appName: processConfig.appName,
+        processName: processConfig.processName,
+        windowIndex: 0,
+        continueOnly: true,
+        running
+      }
+    };
   }
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+const safeDiscoverProcessWindows = async (processName: string): Promise<Array<{ title: string; windowIndex: number }>> => {
+  try {
+    return await discoverProcessWindows(processName);
+  } catch {
+    return [];
+  }
+};
+
+export const selectContinueOnlyProcessConfigs = (
+  processes: MacProcessConfig[],
+  runningProcessNames: ReadonlySet<string>
+): MacProcessConfig[] => {
+  if (runningProcessNames.size === 0) return processes;
+  const runningProcesses = processes.filter((processConfig) => runningProcessNames.has(processConfig.processName));
+  return runningProcesses.length > 0 ? runningProcesses : processes;
+};
+
+const safeListRunningMacProcessNames = async (): Promise<Set<string>> => {
+  try {
+    return await listRunningMacProcessNames();
+  } catch {
+    return new Set();
+  }
+};
+
+export const listRunningMacProcessNames = async (): Promise<Set<string>> => {
+  const { stdout } = await execFileAsync("ps", ["-axo", "comm="], {
+    maxBuffer: 1024 * 1024,
+    timeout: PROCESS_LIST_TIMEOUT_MS
+  });
+  return new Set(
+    stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((command) => basename(command))
+  );
+};
 
 export const rememberInteractionOptionLabels = (
   labelsByOptionId: Map<string, string>,
@@ -261,4 +471,33 @@ export const resolveInteractionResponseLabel = (
   if (remembered) return remembered;
   if (typeof input.value !== "undefined" && input.value !== null) return String(input.value);
   return input.optionId;
+};
+
+export const formatMacosAutomationError = (
+  adapterId: ClientAdapterId,
+  error: unknown,
+  processName?: string,
+  options: {
+    continueOnly?: boolean;
+  } = {}
+): string => {
+  const message = error instanceof Error ? error.message : String(error);
+  const processArg = processName ? ` --process ${quoteCommandArg(processName)}` : "";
+  const diagnosticFlag = options.continueOnly ? "--continue-only-targets" : "--continue-probe";
+  const prefix = options.continueOnly ? "macOS continue-only automation failed" : "macOS accessibility automation failed";
+  return [
+    `${prefix}: ${message.replace(/\s+/g, " ").trim()}`,
+    `Run: pnpm --filter @easycode/desktop-agent inspect -- --adapter ${adapterId}${processArg} ${diagnosticFlag}`
+  ].join(". ");
+};
+
+const targetIdSegment = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "process";
+
+const quoteCommandArg = (value: string): string => {
+  if (/^[A-Za-z0-9._:/-]+$/.test(value)) return value;
+  return `'${value.replaceAll("'", "'\\''")}'`;
 };

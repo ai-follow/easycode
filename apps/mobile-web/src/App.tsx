@@ -9,7 +9,10 @@ import {
   type RelayPayload
 } from "@easycode/protocol";
 import { buildMobileWebSocketUrl, nextReconnectAttempt, reconnectDelayMs } from "./mobileConnection.js";
+import { formatMobileDelivery } from "./mobileDelivery.js";
 import { createMobileE2eeSessionStore, MobileE2eeSessionManager } from "./mobileE2eeSession.js";
+import { parseMobileLaunchParams } from "./mobileLaunchParams.js";
+import { selectMobileQuickAction } from "./mobileActions.js";
 import { MobileOutbox } from "./mobileOutbox.js";
 import { applyMobileRelayPayload, emptyMobileRelayState, removePendingInteraction } from "./mobileRelayState.js";
 import {
@@ -23,10 +26,11 @@ type ConnectionState = "disconnected" | "claiming" | "connecting" | "connected" 
 
 const defaultServer = `${window.location.protocol}//${window.location.hostname}:8787`;
 const mobileSendQueueLimit = 200;
+const launchParams = parseMobileLaunchParams(window.location.search, defaultServer);
 
 export const App = () => {
-  const [serverUrl, setServerUrl] = useState(defaultServer);
-  const [pairingCode, setPairingCode] = useState("");
+  const [serverUrl, setServerUrl] = useState(launchParams.serverUrl);
+  const [pairingCode, setPairingCode] = useState(launchParams.pairingCode);
   const [status, setStatus] = useState<ConnectionState>("disconnected");
   const [error, setError] = useState("");
   const [pairId, setPairId] = useState("");
@@ -48,6 +52,11 @@ export const App = () => {
   const { sessions, selectedSessionId } = mobileState;
   const selected = selectedSessionId ? sessions[selectedSessionId] : undefined;
   const latestDelivery = selected?.deliveries.at(-1);
+  const latestDeliveryDisplay = latestDelivery ? formatMobileDelivery(latestDelivery) : undefined;
+  const quickAction = useMemo(
+    () => selectMobileQuickAction(selected?.pendingInteractions ?? [], Boolean(selectedSessionId)),
+    [selected?.pendingInteractions, selectedSessionId]
+  );
 
   const canSend = status === "connected" && Boolean(selectedSessionId) && draft.trim().length > 0;
 
@@ -347,6 +356,19 @@ export const App = () => {
     });
   };
 
+  const sendContinueText = async (text: string) => {
+    if (!selectedSessionId) return;
+    await sendPayload({
+      kind: "user_input",
+      sessionId: selectedSessionId,
+      input: {
+        type: "text",
+        inputId: `input_${crypto.randomUUID()}`,
+        text
+      }
+    });
+  };
+
   const forgetPairing = () => {
     const currentPairId = pairId;
     const currentMobileToken = mobileToken;
@@ -444,6 +466,23 @@ export const App = () => {
             </button>
           </div>
           {error ? <p className="error workspace-error">{error}</p> : null}
+          {quickAction ? (
+            <div className="actionbar">
+              <button
+                type="button"
+                className="primary-action"
+                onClick={() => {
+                  if (quickAction.type === "interaction") {
+                    void sendInteractionResponse(quickAction.request, quickAction.option.id);
+                    return;
+                  }
+                  void sendContinueText(quickAction.text);
+                }}
+              >
+                {quickAction.label}
+              </button>
+            </div>
+          ) : null}
 
           <div className="messages" aria-live="polite">
             {(selected?.messages ?? []).map((message) => (
@@ -468,10 +507,13 @@ export const App = () => {
             ))}
           </div>
 
-          {latestDelivery ? (
-            <p className={`delivery delivery-${latestDelivery.status}`}>
-              {latestDelivery.status}: {latestDelivery.detail ?? latestDelivery.inputId}
-            </p>
+          {latestDeliveryDisplay ? (
+            <section className={`delivery delivery-${latestDeliveryDisplay.status}`}>
+              <p><strong>{latestDeliveryDisplay.status}</strong>: {latestDeliveryDisplay.summary}</p>
+              {latestDeliveryDisplay.command ? (
+                <pre className="delivery-command">{latestDeliveryDisplay.command}</pre>
+              ) : null}
+            </section>
           ) : null}
           {pendingOutboundCount > 0 ? (
             <p className="delivery delivery-queued">

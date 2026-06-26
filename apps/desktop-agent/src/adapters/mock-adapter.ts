@@ -86,6 +86,15 @@ export class MockAdapter implements ClientAdapter {
 
     if (input.type === "text") {
       this.addMessage("user", input.text);
+      if (input.text.trim() === "/fail-delivery") {
+        return {
+          inputId: input.inputId,
+          status: "failed",
+          detail: "macOS continue-only automation failed: Process is not running: Codex. Run: pnpm --filter @easycode/desktop-agent inspect -- --adapter codex --process Codex --continue-only-targets",
+          deliveredAt: nowIso()
+        };
+      }
+
       if (input.text.trim() === "/request") {
         const request: InteractionRequest = {
           id: `interaction_${randomUUID()}`,

@@ -1,0 +1,3 @@
+AXStaticText	static text	Claude Code			
+AXStaticText	static text	Assistant: I finished the current step and am waiting for your next instruction.			
+AXStaticText	static text	>			

@@ -128,25 +128,97 @@ export const dumpAccessibilityTree = async (processName: string, windowIndex: nu
   return stdout;
 };
 
-export const pasteAndSubmitText = async (appName: string, text: string): Promise<void> => {
-  const escapedAppName = appName.replaceAll('"', '\\"');
-  const script = `
+export const pasteAndSubmitText = async (processName: string, windowIndex: number, text: string): Promise<void> => {
+  await runOsa(pasteAndSubmitTextScript(), [processName, String(windowIndex), text]);
+};
+
+export const pasteAndSubmitTextToProcess = async (processName: string, text: string, appName = processName): Promise<void> => {
+  await runOsa(pasteAndSubmitTextToProcessScript(), [processName, appName, text]);
+};
+
+export const checkProcessExistsInSystemEvents = async (processName: string): Promise<boolean> => {
+  const { stdout } = await runOsa(checkProcessExistsInSystemEventsScript(), [processName]);
+  return stdout.trim() === "true";
+};
+
+export const checkProcessExistsInSystemEventsScript = (): string => `
     on run argv
-      set previousClipboard to the clipboard
-      set the clipboard to item 1 of argv
-      tell application "${escapedAppName}" to activate
-      delay 0.2
+      set processName to item 1 of argv
       tell application "System Events"
-        keystroke "v" using command down
-        key code 36
+        if exists process processName then
+          return "true"
+        end if
       end tell
+      return "false"
+    end run
+  `;
+
+export const pasteAndSubmitTextScript = (): string => `
+    on run argv
+      set processName to item 1 of argv
+      set windowIndex to (item 2 of argv) as integer
+      tell application "System Events"
+        if not (exists process processName) then error "Process is not running: " & processName
+        tell process processName
+          set frontmost to true
+          set targetWindow to window windowIndex
+          try
+            perform action "AXRaise" of targetWindow
+          end try
+        end tell
+      end tell
+      set previousClipboard to the clipboard
+      set the clipboard to item 3 of argv
+      try
+        tell application "System Events"
+          tell process processName
+            set frontmost to true
+            try
+              perform action "AXRaise" of window windowIndex
+            end try
+            delay 0.2
+            keystroke "v" using command down
+            key code 36
+          end tell
+        end tell
+      on error errorMessage number errorNumber
+        set the clipboard to previousClipboard
+        error errorMessage number errorNumber
+      end try
       delay 0.1
       set the clipboard to previousClipboard
     end run
   `;
 
-  await runOsa(script, [text]);
-};
+export const pasteAndSubmitTextToProcessScript = (): string => `
+    on run argv
+      set processName to item 1 of argv
+      set appName to item 2 of argv
+      tell application "System Events"
+        if not (exists process processName) then error "Process is not running: " & processName
+      end tell
+      set previousClipboard to the clipboard
+      set the clipboard to item 3 of argv
+      try
+        try
+          tell application appName to activate
+        end try
+        tell application "System Events"
+          tell process processName
+            set frontmost to true
+            delay 0.2
+            keystroke "v" using command down
+            key code 36
+          end tell
+        end tell
+      on error errorMessage number errorNumber
+        set the clipboard to previousClipboard
+        error errorMessage number errorNumber
+      end try
+      delay 0.1
+      set the clipboard to previousClipboard
+    end run
+  `;
 
 export const clickButtonByLabel = async (processName: string, windowIndex: number, label: string): Promise<void> => {
   await runOsa(clickButtonByLabelScript(), [processName, String(windowIndex), label]);

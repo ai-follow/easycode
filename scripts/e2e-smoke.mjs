@@ -113,6 +113,45 @@ try {
     "mock assistant echo"
   );
 
+  await sendMobile(first, pairId, {
+    kind: "user_input",
+    sessionId,
+    input: {
+      type: "text",
+      inputId: `input_${randomUUID()}`,
+      text: "continue"
+    }
+  });
+
+  await waitFor(
+    first.received,
+    (envelope) =>
+      envelope.payload.kind === "client_event" &&
+      envelope.payload.event.type === "message" &&
+      envelope.payload.event.payload.text.includes("Echo from desktop client: continue"),
+    "generic continue delivery"
+  );
+
+  await sendMobile(first, pairId, {
+    kind: "user_input",
+    sessionId,
+    input: {
+      type: "text",
+      inputId: `input_${randomUUID()}`,
+      text: "/fail-delivery"
+    }
+  });
+
+  await waitFor(
+    first.received,
+    (envelope) =>
+      envelope.payload.kind === "client_event" &&
+      envelope.payload.event.type === "delivery_state" &&
+      envelope.payload.event.payload.status === "failed" &&
+      envelope.payload.event.payload.detail.includes("--continue-only-targets"),
+    "failed delivery diagnostics"
+  );
+
   const ackCountBeforeDuplicate = countEnvelopes(
     first.received,
     (envelope) => envelope.payload.kind === "ack" && envelope.payload.refId === textEnvelopeId

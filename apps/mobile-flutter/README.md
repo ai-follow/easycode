@@ -21,9 +21,19 @@ agent. Interaction responses send the client-provided `optionId` only; EasyCode
 does not interpret approve, reject, stop, or continue semantics.
 Outbound envelopes are kept in a bounded in-memory queue until the relay returns
 transport `ack`, so reconnect retries reuse the same envelope ids.
+Client-provided continue/approve-style interaction options are promoted to a
+one-tap action above the composer while the full option list remains visible.
+When no client interaction is pending, the same primary action sends a plain
+`continue` message to the selected session for terminal-style agents that are
+waiting for text input.
+The native skeleton also mirrors the mobile-web E2EE flow: it answers
+`key_exchange`, stores its mobile ECDH session in `SharedPreferences`, decrypts
+`encrypted_payload`, and encrypts outbound business payloads after the shared
+key is ready.
 
-The current native skeleton still lacks the mobile-web E2EE session manager.
-Add that before treating the Flutter app as the primary Android client.
+Flutter is not installed on this machine, so this source still needs
+`flutter pub get` and `flutter analyze` after the SDK is installed before
+treating the Flutter app as the primary Android client.
 
 Protocol model generation should use the checked-in schema bundle at
 `../../packages/protocol/schemas/easycode-protocol.schema.json`. Relay HTTP

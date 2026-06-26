@@ -4,13 +4,19 @@ import type { AdapterName } from "./adapters/index.js";
 import { createAdapter } from "./adapters/index.js";
 import { defaultE2eeStateDir, FileRelayE2eeSessionStore } from "./e2ee-state.js";
 import { defaultPairingStateFile, FileDesktopPairingStore, type DesktopPairingStore, type StoredDesktopPairing } from "./pairing-state.js";
+import { buildMobilePairingUrl, resolveMobilePairingTarget } from "./pairing-instructions.js";
 import { createPairing, DesktopRelayClient, RelayAuthenticationError, revokePairing } from "./relay-client.js";
 import { formatTargets, selectTarget } from "./target-selection.js";
 
 type CliOptions = {
   serverUrl: string;
   adapterName: AdapterName;
+  mobileUrl?: string;
+  mobileServerUrl?: string;
+  mobilePort: number;
+  lanHost?: string;
   relayToken?: string;
+  continueOnly: boolean;
   targetId?: string;
   targetIndex?: number;
   targetTitle?: string;
@@ -42,7 +48,12 @@ const parseArgs = (): CliOptions => {
   return {
     serverUrl: get("--server", process.env.EASYCODE_SERVER_URL ?? "http://localhost:8787"),
     adapterName: get("--adapter", process.env.EASYCODE_ADAPTER ?? "mock") as AdapterName,
+    mobileUrl: getOptional("--mobile-url") ?? process.env.EASYCODE_MOBILE_URL,
+    mobileServerUrl: getOptional("--mobile-server") ?? process.env.EASYCODE_MOBILE_SERVER_URL,
+    mobilePort: parseOptionalPort(getOptional("--mobile-port") ?? process.env.EASYCODE_MOBILE_PORT) ?? 5173,
+    lanHost: getOptional("--lan-host") ?? process.env.EASYCODE_LAN_HOST,
     relayToken: getOptional("--relay-token") ?? process.env.EASYCODE_RELAY_TOKEN ?? process.env.EASYCODE_RELAY_ADMIN_TOKEN,
+    continueOnly: args.includes("--continue-only") || process.env.EASYCODE_CONTINUE_ONLY === "1",
     targetId: getOptional("--target"),
     targetIndex: parseOptionalIndex(getOptional("--target-index")),
     targetTitle: getOptional("--target-title"),
@@ -56,9 +67,12 @@ const parseArgs = (): CliOptions => {
 
 const main = async (): Promise<void> => {
   const options = parseArgs();
-  const adapter = createAdapter(options.adapterName);
+  const adapter = createAdapter(options.adapterName, {
+    continueOnly: options.continueOnly
+  });
 
   console.log(`[desktop] using adapter=${options.adapterName} server=${options.serverUrl}`);
+  if (options.continueOnly) console.log("[desktop] continue-only mode enabled; desktop window content will not be captured");
   console.log(`[desktop] pairing state file=${options.pairingStateFile}`);
   if (options.e2ee) console.log("[desktop] e2ee enabled");
   if (options.e2ee) console.log(`[desktop] e2ee state dir=${options.e2eeStateDir}`);
@@ -82,7 +96,7 @@ const main = async (): Promise<void> => {
   console.log(`[desktop] attached session=${session.sessionId} target="${target.title}"`);
 
   let pairing = await loadOrCreatePairing(options, pairingStore);
-  logPairing(pairing);
+  logPairing(pairing, options);
 
   let relay: DesktopRelayClient;
   const handleEnvelope = async (envelope: RelayEnvelope): Promise<void> => {
@@ -117,7 +131,7 @@ const main = async (): Promise<void> => {
     console.error("[desktop] saved pairing was rejected by relay; creating a new pairing");
     await pairingStore.delete();
     pairing = await createAndSavePairing(options, pairingStore);
-    logPairing(pairing);
+    logPairing(pairing, options);
     relay = createRelay(pairing);
     await relay.connect();
   }
@@ -176,7 +190,7 @@ const main = async (): Promise<void> => {
       return;
     }
 
-    const receipt = await adapter.sendInput(sessionId, input);
+    const receipt = await deliverInputToAdapter(sessionId, input);
     relay.send({
       kind: "client_event",
       sessionId,
@@ -191,6 +205,19 @@ const main = async (): Promise<void> => {
       }
     });
   }
+
+  async function deliverInputToAdapter(sessionId: string, input: UserInput) {
+    try {
+      return await adapter.sendInput(sessionId, input);
+    } catch (error) {
+      return {
+        inputId: input.inputId,
+        status: "failed" as const,
+        detail: error instanceof Error ? error.message : String(error),
+        deliveredAt: new Date().toISOString()
+      };
+    }
+  }
 };
 
 main().catch((error) => {
@@ -202,6 +229,12 @@ function parseOptionalIndex(value: string | undefined): number | undefined {
   if (typeof value !== "string") return undefined;
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function parseOptionalPort(value: string | undefined): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : undefined;
 }
 
 async function loadOrCreatePairing(options: CliOptions, store: DesktopPairingStore): Promise<ActivePairing> {
@@ -246,9 +279,10 @@ function activePairingFromStored(stored: StoredDesktopPairing): ActivePairing {
   };
 }
 
-function logPairing(pairing: ActivePairing): void {
+function logPairing(pairing: ActivePairing, options: Pick<CliOptions, "mobileUrl" | "mobileServerUrl" | "mobilePort" | "serverUrl" | "lanHost">): void {
   if (!pairing.reused) {
     console.log(`[desktop] pairing code: ${pairing.pairingCode}`);
+    logMobilePairingUrl(pairing, options);
     console.log("[desktop] open the mobile client and claim this code before it expires.");
     return;
   }
@@ -256,8 +290,33 @@ function logPairing(pairing: ActivePairing): void {
   console.log(`[desktop] using saved pairing pairId=${pairing.pairId}`);
   if (pairing.pairingCode && !isExpired(pairing.expiresAt)) {
     console.log(`[desktop] saved pairing code, if not claimed yet: ${pairing.pairingCode}`);
+    logMobilePairingUrl(pairing, options);
   }
   console.log("[desktop] mobile clients with saved credentials can reconnect without claiming a new code.");
+}
+
+function logMobilePairingUrl(
+  pairing: ActivePairing,
+  options: Pick<CliOptions, "mobileUrl" | "mobileServerUrl" | "mobilePort" | "serverUrl" | "lanHost">
+): void {
+  if (!pairing.pairingCode) return;
+  try {
+    const target = resolveMobilePairingTarget(options);
+    if (!target.mobileUrl) {
+      if (options.lanHost) {
+        console.error(`[desktop] could not infer a mobile pairing url from --lan-host ${options.lanHost}; pass --mobile-url explicitly.`);
+      }
+      return;
+    }
+    console.log(`[desktop] mobile pairing url: ${buildMobilePairingUrl({
+      mobileUrl: target.mobileUrl,
+      relayUrl: target.relayUrl,
+      pairingCode: pairing.pairingCode
+    })}`);
+  } catch (error) {
+    const source = options.mobileUrl ?? options.lanHost ?? "";
+    console.error(`[desktop] ignored invalid mobile pairing url option "${source}": ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function isExpired(expiresAt: string): boolean {

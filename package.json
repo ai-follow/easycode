@@ -9,10 +9,11 @@
     "dev:server": "pnpm --filter @easycode/relay-server dev",
     "dev:desktop": "pnpm --filter @easycode/desktop-agent dev",
     "dev:mobile": "pnpm --filter @easycode/mobile-web dev",
+    "dev:lan": "node scripts/dev-lan.mjs",
     "contracts:generate": "pnpm --filter @easycode/protocol schema:generate && pnpm --filter @easycode/protocol openapi:generate",
     "contracts:check": "pnpm --filter @easycode/protocol build && pnpm --filter @easycode/protocol schema:check && pnpm --filter @easycode/protocol openapi:check",
     "typecheck": "pnpm --filter @easycode/protocol build && pnpm -r typecheck",
-    "test": "pnpm --filter @easycode/protocol build && pnpm -r test",
+    "test": "pnpm --filter @easycode/protocol build && pnpm -r test && node --test scripts/*.test.mjs",
     "test:e2e": "pnpm build && node scripts/e2e-smoke.mjs",
     "lint": "pnpm -r lint"
   },
