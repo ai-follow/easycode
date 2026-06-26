@@ -50,10 +50,12 @@ pnpm dev:lan -- --adapter codex
 
 `pnpm dev:lan` starts the local relay, mobile web client, and desktop agent
 together. It defaults to continue-only mode, uses `--lan-host auto`, and prints
-a mobile pairing URL that a phone on the same network can open. Use
-`--adapter cursor`, `--adapter claude-code`, or `--adapter mock` for other
-targets. Add `--dry-run` to print the child commands without starting them.
-Use `--pairing-state-file /tmp/easycode-pairing.json` for temporary validation
+a mobile pairing URL that a phone on the same network can open. If the default
+mobile web port 5173 is already in use, it tries higher ports and passes the
+selected port to the desktop agent. Use `--adapter cursor`,
+`--adapter claude-code`, or `--adapter mock` for other targets. Add `--dry-run`
+to print the child commands without starting them. Use
+`--pairing-state-file /tmp/easycode-pairing.json` for temporary validation
 without touching the default desktop pairing state.
 
 If you want to run each service manually, start the relay first:

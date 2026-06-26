@@ -28,7 +28,7 @@ pnpm test:e2e
 pnpm dev:lan -- --adapter codex
 ```
 
-`pnpm dev:lan` 会同时启动本地 relay、mobile web client 和 desktop agent。它默认使用 continue-only mode，使用 `--lan-host auto`，并打印一条同一网络下手机可打开的 mobile pairing URL。其他目标可使用 `--adapter cursor`、`--adapter claude-code` 或 `--adapter mock`。添加 `--dry-run` 可以只打印子命令而不启动它们。使用 `--pairing-state-file /tmp/easycode-pairing.json` 可以做临时验证，避免触碰默认 desktop pairing state。
+`pnpm dev:lan` 会同时启动本地 relay、mobile web client 和 desktop agent。它默认使用 continue-only mode，使用 `--lan-host auto`，并打印一条同一网络下手机可打开的 mobile pairing URL。如果默认 mobile web 端口 5173 已被占用，它会尝试更高端口，并把实际选中的端口传给 desktop agent。其他目标可使用 `--adapter cursor`、`--adapter claude-code` 或 `--adapter mock`。添加 `--dry-run` 可以只打印子命令而不启动它们。使用 `--pairing-state-file /tmp/easycode-pairing.json` 可以做临时验证，避免触碰默认 desktop pairing state。
 
 如果要手动分别运行每个服务，请先启动 relay：
 

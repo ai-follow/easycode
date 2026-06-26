@@ -103,7 +103,7 @@ Options:
   --pairing-state-file <p>  Pass through to desktop agent pairing state
   --lan-host <host|auto>    Host used in printed mobile pairing URL (default: auto)
   --server-port <port>      Relay port (default: 8787)
-  --mobile-port <port>      Mobile web port (default: 5173)
+  --mobile-port <port>      Preferred mobile web port (default: 5173; tries higher ports if busy)
   --e2ee                    Enable encrypted relay payloads
   --reset-pairing           Reset saved desktop pairing before creating a new one
   --dry-run                 Print child commands without starting them

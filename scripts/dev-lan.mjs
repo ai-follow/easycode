@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { createServer } from "node:net";
 import {
   buildDevLanCommands,
   devLanHelp,
@@ -9,7 +10,6 @@ import {
 
 const options = parseDevLanArgs(process.argv.slice(2));
 const root = new URL("..", import.meta.url);
-const { commands, serverUrl } = buildDevLanCommands(options);
 
 if (options.help) {
   console.log(devLanHelp());
@@ -38,6 +38,9 @@ process.on("SIGTERM", () => {
 await run();
 
 async function run() {
+  const runOptions = options.dryRun ? options : await resolveRuntimeOptions(options);
+  const { commands, serverUrl } = buildDevLanCommands(runOptions);
+
   if (options.dryRun) {
     for (const command of commands) console.log(formatDevLanCommand(command));
     return;
@@ -50,8 +53,8 @@ async function run() {
 
   try {
     await Promise.all([
-      waitForHttp(`${serverUrl}/health`, "relay"),
-      waitForHttp(`http://localhost:${options.mobilePort}`, "mobile web")
+      waitForHttp(`${serverUrl}/health`, "relay", relay),
+      waitForHttp(`http://localhost:${runOptions.mobilePort}`, "mobile web", mobile)
     ]);
   } catch (error) {
     console.error(`[dev:lan] ${error instanceof Error ? error.message : String(error)}`);
@@ -60,6 +63,19 @@ async function run() {
   }
 
   children.push(spawnManaged(commands[2]));
+}
+
+async function resolveRuntimeOptions(currentOptions) {
+  const mobilePort = await findAvailablePort(currentOptions.mobilePort);
+  if (mobilePort !== currentOptions.mobilePort) {
+    console.error(
+      `[dev:lan] Mobile web port ${currentOptions.mobilePort} is in use; using ${mobilePort} instead.`
+    );
+  }
+  return {
+    ...currentOptions,
+    mobilePort
+  };
 }
 
 function spawnManaged({ label, command, args, env }) {
@@ -85,9 +101,12 @@ function spawnManaged({ label, command, args, env }) {
   return child;
 }
 
-async function waitForHttp(url, label, timeoutMs = 10000) {
+async function waitForHttp(url, label, child, timeoutMs = 10000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt <= timeoutMs) {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(`${label} exited before it became ready`);
+    }
     try {
       const response = await fetch(url);
       if (response.ok || response.status < 500) return;
@@ -97,6 +116,25 @@ async function waitForHttp(url, label, timeoutMs = 10000) {
     await sleep(150);
   }
   throw new Error(`Timed out waiting for ${label} at ${url}`);
+}
+
+async function findAvailablePort(startPort, maxAttempts = 50) {
+  const lastPort = Math.min(65535, startPort + maxAttempts - 1);
+  for (let port = startPort; port <= lastPort; port += 1) {
+    if (await isPortAvailable(port)) return port;
+  }
+  throw new Error(`No available mobile web port found from ${startPort} to ${lastPort}`);
+}
+
+function isPortAvailable(port) {
+  return new Promise((resolve) => {
+    const server = createServer();
+    server.unref();
+    server.once("error", () => resolve(false));
+    server.listen({ host: "0.0.0.0", port }, () => {
+      server.close(() => resolve(true));
+    });
+  });
 }
 
 function sleep(ms) {
